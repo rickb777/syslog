@@ -1,4 +1,4 @@
-NOTE: This is the @chrissnell fork of syslog.  This fork differs from @ziutek's original version in the following ways:
+**NOTE:** This is the @chrissnell fork of syslog.  This fork differs from @ziutek's original version in the following ways:
 
 - It has support for RFC 5424-style syslog packets
 - This version supports "extended" (non-alphanumeric) characters in the syslog tag field.  This breaks RFC spec but is useful for creating tags like "apache-access-log-prod".  These characters are specified in a string passed to Server.AddAllowedRunes().   Example:
@@ -13,6 +13,8 @@ NOTE: This is the @chrissnell fork of syslog.  This fork differs from @ziutek's 
 ```
 
 
+About
+-----
 Using this library you can easy implement your own syslog server that:
 
 1. Can listen on multiple UDP ports and unix domain sockets.
