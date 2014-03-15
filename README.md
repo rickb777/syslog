@@ -9,7 +9,7 @@
 	s.AddAllowedRunes("-._")
 
 	s.AddHandler(newHandler())
-	s.Listen("127.0.0.1:514", "udp")
+	s.Listen(*listenAddrPtr)
 ```
 
 
