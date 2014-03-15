@@ -55,11 +55,7 @@ func (s *Server) Listen(addr string, proto string) error {
 			return err
 		}
 	} else {
-		a, err := net.ResolveUnixAddr("unixgram", addr)
-		if err != nil {
-			return err
-		}
-		c, err = net.ListenUnixgram("unixgram", a)
+		c, err := net.Listen("unix", addr)
 		if err != nil {
 			return err
 		}
