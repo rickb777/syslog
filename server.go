@@ -14,7 +14,7 @@ import (
 )
 
 type Server struct {
-	conns    []net.PacketConn
+	conns    []net.Listener
 	handlers []Handler
 	shutdown bool
 	tagrunes map[rune]bool
