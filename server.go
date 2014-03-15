@@ -106,7 +106,8 @@ func (s *Server) passToHandlers(m *Message) {
 func (s *Server) receiver(c net.Listener) {
 	buf := make([]byte, 1024)
 	for {
-		n, addr, err := c.Read(buf)
+		conn, err := c.Accept()
+		n, addr, err := conn.Read(buf)
 		if err != nil {
 			if !s.shutdown {
 				s.l.Fatalln("Read error:", err)
