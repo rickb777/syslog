@@ -45,7 +45,7 @@ func (s *Server) AddHandler(h Handler) {
 func (s *Server) Listen(addr string, proto string) error {
 	var c net.PacketConn
 	if strings.IndexRune(addr, ':') != -1 {
-		if proto == 'udp' {
+		if proto == "udp" {
 			a, err := net.ResolveUDPAddr("udp", addr)
 			if err != nil {
 				return err
@@ -54,7 +54,7 @@ func (s *Server) Listen(addr string, proto string) error {
 			if err != nil {
 				return err
 			}
-		} else if proto == 'tcp' {
+		} else if proto == "tcp" {
 			a, err := net.ResolveTCPAddr("tcp", addr)
 			if err != nil {
 				return err
