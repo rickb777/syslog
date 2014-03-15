@@ -107,7 +107,7 @@ func (s *Server) receiver(c net.Listener) {
 	buf := make([]byte, 1024)
 	for {
 		conn, err := c.Accept()
-		n, addr, err := conn.Read(buf)
+		n, err := conn.Read(buf)
 		if err != nil {
 			if !s.shutdown {
 				s.l.Fatalln("Read error:", err)
