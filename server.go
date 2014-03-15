@@ -103,7 +103,7 @@ func (s *Server) passToHandlers(m *Message) {
 	}
 }
 
-func (s *Server) receiver(c net.PacketConn) {
+func (s *Server) receiver(c net.Listener) {
 	buf := make([]byte, 1024)
 	for {
 		n, addr, err := c.ReadFrom(buf)
