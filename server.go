@@ -43,7 +43,7 @@ func (s *Server) AddHandler(h Handler) {
 // Listen starts gorutine that receives syslog messages on specified address.
 // addr can be a path (for unix domain sockets) or host:port (for UDP).
 func (s *Server) Listen(addr string, proto string) error {
-	var c net.PacketConn
+	var c net.Listener
 	if proto == "udp" {
 		c, err := net.Listen("udp", addr)
 		if err != nil {
