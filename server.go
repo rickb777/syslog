@@ -45,12 +45,12 @@ func (s *Server) AddHandler(h Handler) {
 func (s *Server) Listen(addr string, proto string) error {
 	var c net.PacketConn
 	if proto == "udp" {
-		c, err = net.Listen("udp", a)
+		c, err := net.Listen("udp", a)
 		if err != nil {
 			return err
 		}
 	} else if proto == "tcp" {
-		c, err = net.Listen("tcp", a)
+		c, err := net.Listen("tcp", a)
 		if err != nil {
 			return err
 		}
