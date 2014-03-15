@@ -117,7 +117,7 @@ func (s *Server) receiver(c net.Listener) {
 		pkt := buf[:n]
 
 		m := new(Message)
-		m.Source = addr
+		m.Source = conn.RemoteAddr()
 		m.Time = time.Now()
 
 		// Parse priority (if exists)
