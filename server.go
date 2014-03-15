@@ -44,18 +44,19 @@ func (s *Server) AddHandler(h Handler) {
 // addr can be a path (for unix domain sockets) or host:port (for UDP).
 func (s *Server) Listen(addr string, proto string) error {
 	var c net.Listener
+	var err error
 	if proto == "udp" {
-		c, err := net.Listen("udp", addr)
+		c, err = net.Listen("udp", addr)
 		if err != nil {
 			return err
 		}
 	} else if proto == "tcp" {
-		c, err := net.Listen("tcp", addr)
+		c, err = net.Listen("tcp", addr)
 		if err != nil {
 			return err
 		}
 	} else {
-		c, err := net.Listen("unix", addr)
+		c, err = net.Listen("unix", addr)
 		if err != nil {
 			return err
 		}
