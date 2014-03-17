@@ -14,7 +14,7 @@ import (
 )
 
 type Server struct {
-	conns    []net.Listener
+	conns    []net.PacketConn
 	handlers []Handler
 	shutdown bool
 	tagrunes map[rune]bool
@@ -42,21 +42,23 @@ func (s *Server) AddHandler(h Handler) {
 
 // Listen starts gorutine that receives syslog messages on specified address.
 // addr can be a path (for unix domain sockets) or host:port (for UDP).
-func (s *Server) Listen(addr string, proto string) error {
-	var c net.Listener
-	var err error
-	if proto == "udp" {
-		c, err = net.Listen("udp", addr)
+func (s *Server) Listen(addr string) error {
+	var c net.PacketConn
+	if strings.IndexRune(addr, ':') != -1 {
+		a, err := net.ResolveUDPAddr("udp", addr)
 		if err != nil {
 			return err
 		}
-	} else if proto == "tcp" {
-		c, err = net.Listen("tcp", addr)
+		c, err = net.ListenUDP("udp", a)
 		if err != nil {
 			return err
 		}
 	} else {
-		c, err = net.Listen("unix", addr)
+		a, err := net.ResolveUnixAddr("unixgram", addr)
+		if err != nil {
+			return err
+		}
+		c, err = net.ListenUnixgram("unixgram", a)
 		if err != nil {
 			return err
 		}
@@ -104,11 +106,10 @@ func (s *Server) passToHandlers(m *Message) {
 	}
 }
 
-func (s *Server) receiver(c net.Listener) {
+func (s *Server) receiver(c net.PacketConn) {
 	buf := make([]byte, 1024)
 	for {
-		conn, err := c.Accept()
-		n, err := conn.Read(buf)
+		n, addr, err := c.ReadFrom(buf)
 		if err != nil {
 			if !s.shutdown {
 				s.l.Fatalln("Read error:", err)
@@ -118,7 +119,7 @@ func (s *Server) receiver(c net.Listener) {
 		pkt := buf[:n]
 
 		m := new(Message)
-		m.Source = conn.RemoteAddr()
+		m.Source = addr
 		m.Time = time.Now()
 
 		// Parse priority (if exists)
