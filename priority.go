@@ -63,6 +63,7 @@ func (f Facility) String() string {
 	return facToStr[f]
 }
 
+// Severity is the message severity defined in RFC5424.
 type Severity byte
 
 const (

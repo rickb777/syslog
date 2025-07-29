@@ -1,5 +1,3 @@
-// Syslog server library. It is based on RFC 3164 so it doesn't parse properly
-// packets with new header format (described in RFC 5424).
 package syslog
 
 import (
@@ -21,30 +19,29 @@ type Server struct {
 	l        FatalLogger
 }
 
-//  NewServer creates idle server
+// NewServer creates an idle server.
 func NewServer() *Server {
 	return &Server{l: log.New(os.Stderr, "", log.LstdFlags)}
 }
 
 // SetLogger sets logger for server errors. A running server is rather quiet and
-// logs only fatal errors using FatalLogger interface. By default standard Go
-// logger is used so errors are writen to stderr and after that whole
-// application is halted. Using SetLogger you can change this behavior (log
-// erross elsewhere and don't halt whole application).
+// logs only fatal errors using FatalLogger interface. By default, the standard Go
+// logger is used so errors are written to stderr, after which the whole
+// application is halted. Using SetLogger you can change this behavior.
 func (s *Server) SetLogger(l FatalLogger) {
 	s.l = l
 }
 
-// AddHandler adds h to internal ordered list of handlers
+// AddHandler adds h to the internal ordered list of handlers.
 func (s *Server) AddHandler(h Handler) {
 	s.handlers = append(s.handlers, h)
 }
 
-// Listen starts gorutine that receives syslog messages on specified address.
+// Listen starts goroutine that receives syslog messages on a specified address.
 // addr can be a path (for unix domain sockets) or host:port (for UDP).
 func (s *Server) Listen(addr string) error {
 	var c net.PacketConn
-	if strings.IndexRune(addr, ':') != -1 {
+	if strings.IndexRune(addr, ':') >= 0 {
 		a, err := net.ResolveUDPAddr("udp", addr)
 		if err != nil {
 			return err
@@ -68,7 +65,7 @@ func (s *Server) Listen(addr string) error {
 	return nil
 }
 
-// Shutdown stops server.
+// Shutdown stops the server.
 func (s *Server) Shutdown() {
 	s.shutdown = true
 	for _, c := range s.conns {
@@ -92,8 +89,8 @@ func isNulCrLf(r rune) bool {
 
 func (s *Server) AddAllowedRunes(allowed string) {
 	s.tagrunes = make(map[rune]bool)
-	for _, runeValue := range allowed {
-		s.tagrunes[runeValue] = true
+	for _, r := range allowed {
+		s.tagrunes[r] = true
 	}
 }
 

@@ -7,6 +7,7 @@ import (
 	"time"
 )
 
+// Message is a Syslog message.
 type Message struct {
 	Time   time.Time
 	Source net.Addr
@@ -14,10 +15,10 @@ type Message struct {
 	Severity
 	Timestamp time.Time // optional
 	Hostname  string    // optional
-	Tag       string // message tag as defined in RFC 3164
-	Content   string // message content as defined in RFC 3164
-	Tag1      string // alternate message tag (white rune as separator)
-	Content1  string // alternate message content (white rune as separator)
+	Tag       string    // message tag as defined in RFC 3164
+	Content   string    // message content as defined in RFC 3164
+	Tag1      string    // alternate message tag (white rune as separator)
+	Content1  string    // alternate message content (white rune as separator)
 }
 
 // NetSrc only network part of Source as string (IP for UDP or Name for UDS)
@@ -35,8 +36,10 @@ func (m *Message) NetSrc() string {
 }
 
 func (m *Message) String() string {
-	timeLayout := "2006-01-02 15:04:05"
-	timestampLayout := "01-02 15:04:05"
+	const (
+		timeLayout      = "2006-01-02 15:04:05"
+		timestampLayout = "01-02 15:04:05"
+	)
 	var h []string
 	if !m.Timestamp.IsZero() {
 		h = append(h, m.Timestamp.Format(timestampLayout))
@@ -46,7 +49,7 @@ func (m *Message) String() string {
 	}
 	var header string
 	if len(h) > 0 {
-		header += " " + strings.Join(h, " ")
+		header = " " + strings.Join(h, " ")
 	}
 	return fmt.Sprintf(
 		"%s %s <%s,%s>%s %s%s",

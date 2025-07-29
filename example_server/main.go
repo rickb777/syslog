@@ -1,8 +1,10 @@
 package main
 
 import (
+	"flag"
 	"fmt"
-	"github.com/ziutek/syslog"
+	"github.com/rickb777/syslog"
+	"log"
 	"os"
 	"os/signal"
 	"syscall"
@@ -14,7 +16,7 @@ type handler struct {
 	*syslog.BaseHandler
 }
 
-// Simple fiter for named/bind messages which can be used with BaseHandler
+// Simple filter for named/bind messages that can be used with BaseHandler
 func filter(m *syslog.Message) bool {
 	return m.Tag == "named" || m.Tag == "bind"
 }
@@ -38,11 +40,17 @@ func (h *handler) mainLoop() {
 	h.End()
 }
 
+var port = flag.Int("port", 514, "port to listen on")
+
+// Create a server with one handler and run one listen goroutine
 func main() {
-	// Create a server with one handler and run one listen gorutine
+	flag.Parse()
 	s := syslog.NewServer()
 	s.AddHandler(newHandler())
-	s.Listen("0.0.0.0:1514")
+	err := s.Listen(fmt.Sprintf("0.0.0.0:%d", *port))
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	// Wait for terminating signal
 	sc := make(chan os.Signal, 2)

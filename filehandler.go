@@ -1,24 +1,25 @@
 package syslog
 
 import (
+	"io"
 	"log"
 	"os"
 	"os/signal"
 	"syscall"
 )
 
-// FileHandler implements Handler interface in the way to save messages into a
+// FileHandler implements [Handler] interface in the way to save messages into a
 // text file. It properly handles logrotate HUP signal (closes a file and tries
 // to open/create new one).
 type FileHandler struct {
 	bh       *BaseHandler
 	filename string
-	f        *os.File
+	f        io.StringWriter
 	l        Logger
 }
 
-// NewFileHandler accepts all arguments expected by NewBaseHandler plus
-// filename which is the path to the log file.
+// NewFileHandler accepts all arguments expected by [NewBaseHandler] plus
+// a filename which is the path to the log file.
 func NewFileHandler(filename string, qlen int, filter func(*Message) bool,
 	ft bool) *FileHandler {
 
@@ -31,8 +32,8 @@ func NewFileHandler(filename string, qlen int, filter func(*Message) bool,
 	return h
 }
 
-// SetLogger changes an internal logger used to log I/O errors. By default I/O
-// errors are written to os.Stderr using log.Logger.
+// SetLogger changes the internal logger used to log I/O errors. By default, I/O
+// errors are written to [os.Stderr] using [log.Logger].
 func (h *FileHandler) SetLogger(l Logger) {
 	h.l = l
 }
@@ -47,18 +48,28 @@ func (h *FileHandler) mainLoop() {
 	for {
 		select {
 		case <-sq: // SIGHUP probably from logrotate
-			h.checkErr(h.f.Close())
+			h.checkErr(h.closeFile())
 			h.f = nil
 		case m, ok := <-mq: // message to save
 			if !ok {
 				if h.f != nil {
-					h.checkErr(h.f.Close())
+					h.checkErr(h.closeFile())
 				}
 				return
 			}
 			h.saveMessage(m)
 		}
 	}
+}
+
+func (h *FileHandler) closeFile() error {
+	if h.f == nil {
+		return nil
+	}
+	if closer, ok := h.f.(io.Closer); ok {
+		return closer.Close()
+	}
+	return nil
 }
 
 func (h *FileHandler) saveMessage(m *Message) {

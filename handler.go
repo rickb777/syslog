@@ -2,14 +2,14 @@ package syslog
 
 // Handler handles syslog messages
 type Handler interface {
-	// Handle should return Message (mayby modified) for future processing by
-	// other handlers or return nil. If Handle is called with nil message it
-	// should complete all remaining work and properly shutdown before return.
+	// Handle should return [Message] (maybe modified) for future processing by
+	// other handlers, or return nil. If Handle is called with nil message it
+	// should complete all remaining work and properly shutdown before returning.
 	Handle(*Message) *Message
 }
 
-// BaseHandler is desigend for simplify the creation of real handlers. It
-// implements Handler interface using nonblocking queuing of messages and
+// BaseHandler is designed to simplify the creation of real handlers. It
+// implements [Handler] interface using nonblocking queuing of messages and
 // simple message filtering.
 type BaseHandler struct {
 	queue  chan *Message
@@ -18,8 +18,8 @@ type BaseHandler struct {
 	ft     bool
 }
 
-// NewBaseHandler creates BaseHandler using specified filter. If filter is nil
-// or if it returns true messages are passed to BaseHandler internal queue
+// NewBaseHandler creates [BaseHandler] using specified filter. If filter is nil
+// or if it returns true messages are passed to [BaseHandler] internal queue
 // (of qlen length). If filter returns false or ft is true messages are returned
 // to server for future processing by other handlers.
 func NewBaseHandler(qlen int, filter func(*Message) bool, ft bool) *BaseHandler {
@@ -32,8 +32,8 @@ func NewBaseHandler(qlen int, filter func(*Message) bool, ft bool) *BaseHandler 
 }
 
 // Handle inserts m in an internal queue. It immediately returns even if
-// queue is full. If m == nil it closes queue and waits for End method call
-// before return.
+// the queue is full. If m == nil, it closes the queue and waits for
+// [BaseHandler.End] method call before returning.
 func (h *BaseHandler) Handle(m *Message) *Message {
 	if m == nil {
 		close(h.queue) // signal that ther is no more messages for processing
@@ -66,16 +66,16 @@ func (h *BaseHandler) Get() *Message {
 	return nil
 }
 
-// Queue returns BaseHandler internal queue as read-only channel. You can use
+// Queue returns the [BaseHandler] internal queue as a read-only channel. You can use
 // it directly, especially if your handler need to select from multiple channels
-// or have to work without blocking. You need to check if this channel is closed by
-// sender and properly shutdown in this case.
+// or have to work without blocking. You need to check whether this channel is closed by
+// the sender and properly shutdown in this case.
 func (h *BaseHandler) Queue() <-chan *Message {
 	return h.queue
 }
 
 // End signals the server that handler properly shutdown. You need to call End
-// only if Get has returned nil before.
+// only if [BaseHandler.Get] has returned nil before.
 func (h *BaseHandler) End() {
 	close(h.end)
 }
