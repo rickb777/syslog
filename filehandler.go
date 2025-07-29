@@ -20,8 +20,7 @@ type FileHandler struct {
 
 // NewFileHandler accepts all arguments expected by [NewBaseHandler] plus
 // a filename which is the path to the log file.
-func NewFileHandler(filename string, qlen int, filter func(*Message) bool,
-	ft bool) *FileHandler {
+func NewFileHandler(filename string, qlen int, filter func(*Message) bool, ft bool) *FileHandler {
 
 	h := &FileHandler{
 		bh:       NewBaseHandler(qlen, filter, ft),

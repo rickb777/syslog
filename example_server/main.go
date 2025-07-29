@@ -40,11 +40,15 @@ func (h *handler) mainLoop() {
 	h.End()
 }
 
-var port = flag.Int("port", 514, "port to listen on")
+var (
+	port = flag.Int("port", 514, "port to listen on")
+	file = flag.String("file", "", "file to write messages to")
+)
 
 // Create a server with one handler and run one listen goroutine
 func main() {
 	flag.Parse()
+
 	s := syslog.NewServer()
 	s.AddHandler(newHandler())
 	err := s.Listen(fmt.Sprintf("0.0.0.0:%d", *port))

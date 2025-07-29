@@ -15,12 +15,12 @@ type BaseHandler struct {
 	queue  chan *Message
 	end    chan struct{}
 	filter func(*Message) bool
-	ft     bool
+	ft     bool // when true, always chain every message to the next handler
 }
 
 // NewBaseHandler creates [BaseHandler] using specified filter. If filter is nil
-// or if it returns true messages are passed to [BaseHandler] internal queue
-// (of qlen length). If filter returns false or ft is true messages are returned
+// or if it returns true, messages are passed to [BaseHandler] internal queue
+// (of qlen length). If filter returns false or ft is true, messages are returned
 // to server for future processing by other handlers.
 func NewBaseHandler(qlen int, filter func(*Message) bool, ft bool) *BaseHandler {
 	return &BaseHandler{
@@ -36,19 +36,22 @@ func NewBaseHandler(qlen int, filter func(*Message) bool, ft bool) *BaseHandler 
 // [BaseHandler.End] method call before returning.
 func (h *BaseHandler) Handle(m *Message) *Message {
 	if m == nil {
-		close(h.queue) // signal that ther is no more messages for processing
+		close(h.queue) // signal that there are no more messages for processing
 		<-h.end        // wait for handler shutdown
 		return nil
 	}
+
 	if h.filter != nil && !h.filter(m) {
 		// m doesn't match the filter
 		return m
 	}
+
 	// Try queue m
 	select {
 	case h.queue <- m:
 	default:
 	}
+
 	if h.ft {
 		return m
 	}
@@ -56,8 +59,8 @@ func (h *BaseHandler) Handle(m *Message) *Message {
 }
 
 // Get returns first message from internal queue. It waits for message if queue
-// is empty. It returns nil if there is no more messages to process and handler
-// should shutdown.
+// is empty. It returns nil if there are no more messages to process and the handler
+// should shut down.
 func (h *BaseHandler) Get() *Message {
 	m, ok := <-h.queue
 	if ok {
@@ -68,13 +71,13 @@ func (h *BaseHandler) Get() *Message {
 
 // Queue returns the [BaseHandler] internal queue as a read-only channel. You can use
 // it directly, especially if your handler need to select from multiple channels
-// or have to work without blocking. You need to check whether this channel is closed by
-// the sender and properly shutdown in this case.
+// or have to work without blocking. You need to check whether this channel has been
+// closed by the sender and properly shut down in this case.
 func (h *BaseHandler) Queue() <-chan *Message {
 	return h.queue
 }
 
-// End signals the server that handler properly shutdown. You need to call End
+// End signals to the server that handler has properly shut down. You need to call End
 // only if [BaseHandler.Get] has returned nil before.
 func (h *BaseHandler) End() {
 	close(h.end)

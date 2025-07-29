@@ -3,3 +3,9 @@ module github.com/rickb777/syslog
 go 1.24.5
 
 //tool github.com/magefile/mage
+
+require (
+	github.com/google/go-cmp v0.7.0 // indirect
+	github.com/rickb777/expect v0.24.0 // indirect
+	github.com/rickb777/plural v1.4.4 // indirect
+)
