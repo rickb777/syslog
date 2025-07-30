@@ -27,6 +27,3 @@ This is a fork of the [@chrissnell fork](https://github.com/chrissnell/syslog) o
 - It has support for both RFC-5424 and older RFC-3164 syslog packets. Although RFC-3164 packets are not well-defined, they can be handled satisfactorily nonetheless.
 - It has a more flexible example server.
 
-
-## About
-
