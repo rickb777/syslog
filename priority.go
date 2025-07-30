@@ -82,7 +82,7 @@ var sevToStr = [...]string{
 	"alert",
 	"crit",
 	"err",
-	"waining",
+	"warning",
 	"notice",
 	"info",
 	"debug",

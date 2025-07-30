@@ -4,63 +4,67 @@ import (
 	"io"
 	"log"
 	"os"
-	"os/signal"
 	"path/filepath"
-	"syscall"
 )
 
 // FileHandler implements [Handler] interface in the way to save messages into a
 // text file. It properly handles logrotate HUP signal (closes a file and tries
 // to open/create new one).
 type FileHandler struct {
-	bh       *BaseHandler
-	filename string
-	f        io.StringWriter
-	l        Logger
+	filename     string
+	acceptFunc   func(*Message) bool
+	f            io.StringWriter
+	propagateAll bool
+	l            Logger
 }
 
-// NewFileHandler accepts all arguments expected by [NewBaseHandler] plus
-// a filename which is the path to the log file.
-func NewFileHandler(filename string, qlen int, filter func(*Message) bool, ft bool) *FileHandler {
-
-	h := &FileHandler{
-		bh:       NewBaseHandler(qlen, filter, ft),
-		filename: filename,
-		l:        log.New(os.Stderr, "", log.LstdFlags),
+// NewFileHandler handles syslog messages by writing them to a file.
+// The acceptFunc determines which messages are written; by default this is
+// all messages.
+//
+// Downstream handlers see all the rejected messages. If propagateAll is true,
+// downstream handles also see the accepted messages.
+//
+// By default, I/O errors are written to [os.Stderr] using [log.Logger].
+func NewFileHandler(filename string, acceptFunc func(*Message) bool, propagateAll bool) *FileHandler {
+	if acceptFunc == nil {
+		acceptFunc = func(*Message) bool { return true }
 	}
-	go h.mainLoop()
+	h := &FileHandler{
+		filename:     filename,
+		acceptFunc:   acceptFunc,
+		propagateAll: propagateAll,
+		l:            log.New(os.Stderr, "", log.LstdFlags),
+	}
 	return h
 }
 
-// SetLogger changes the internal logger used to log I/O errors. By default, I/O
-// errors are written to [os.Stderr] using [log.Logger].
+// SetLogger changes the internal logger used to log I/O errors.
 func (h *FileHandler) SetLogger(l Logger) {
 	h.l = l
 }
 
-func (h *FileHandler) mainLoop() {
-	defer h.bh.End()
+func (h *FileHandler) SigHup() {
+	// SIGHUP probably from logrotate
+	if h.f != nil {
+		h.checkErr(h.closeFile())
+		h.f = nil
+		// file will re-open in next call to saveMessage
+	}
+}
 
-	mq := h.bh.Queue()
-	sq := make(chan os.Signal, 1)
-	signal.Notify(sq, syscall.SIGHUP)
-
-	for {
-		select {
-		case <-sq: // SIGHUP probably from logrotate
-			h.checkErr(h.closeFile())
-			h.f = nil // will re-open in saveMessage
-
-		case m, ok := <-mq: // message to save
-			if !ok {
-				if h.f != nil {
-					h.checkErr(h.closeFile())
-				}
-				return
-			}
-			h.saveMessage(m)
+func (h *FileHandler) Handle(m *Message) *Message {
+	if m == nil {
+		h.checkErr(h.closeFile())
+	} else if h.acceptFunc(m) {
+		h.saveMessage(m)
+		if h.propagateAll {
+			return m
+		} else {
+			return nil
 		}
 	}
+	return m
 }
 
 func (h *FileHandler) closeFile() error {
@@ -87,7 +91,7 @@ func (h *FileHandler) saveMessage(m *Message) {
 		}
 	}
 
-	_, err = h.f.WriteString(m.String() + "\n")
+	_, err = h.f.WriteString(m.Format() + "\n")
 	h.checkErr(err)
 }
 
@@ -101,8 +105,4 @@ func (h *FileHandler) checkErr(err error) bool {
 		h.l.Print(h.filename, ": ", err)
 	}
 	return true
-}
-
-func (h *FileHandler) Handle(m *Message) *Message {
-	return h.bh.Handle(m)
 }

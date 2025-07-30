@@ -46,35 +46,49 @@ func (m *Message) NetSrc() string {
 	return m.Source.String()
 }
 
-func (m *Message) format(pri string) []string {
-	h := []string{pri}
-	if !m.Timestamp.IsZero() {
-		h = append(h, m.Timestamp.Format(time.RFC3339))
-	} else if !m.Time.IsZero() {
-		h = append(h, m.Time.Format(time.RFC3339))
+func (m *Message) format(pri string, version int) []string {
+	var h []string
+	t := m.Timestamp
+	if t.IsZero() {
+		t = m.Time
 	}
+
+	if version == 0 {
+		h = append(h, fmt.Sprintf("%s%s", pri, t.Format(rfc3164LayoutNoYear)))
+	} else {
+		h = append(h, fmt.Sprintf("%s%d %s", pri, version, t.Format(time.RFC3339)))
+	}
+
 	if m.Hostname != "" {
 		h = append(h, m.Hostname)
 	}
-	if m.Application != "" {
-		h = append(h, m.Application)
+
+	if version == 0 && m.Application != "" && m.ProcID != "" {
+		h = append(h, fmt.Sprintf("%s[%s]", m.Application, m.ProcID))
+	} else {
+		if m.Application != "" {
+			h = append(h, m.Application)
+		}
+		if m.ProcID != "" {
+			h = append(h, m.ProcID)
+		}
 	}
-	if m.ProcID != "" {
-		h = append(h, m.ProcID)
-	}
+
 	if m.MsgID != "" {
 		h = append(h, m.MsgID)
 	}
+
 	if m.Data != "" {
 		h = append(h, m.Data)
 	}
+
 	return h
 }
 
 func (m *Message) Format() string {
 	var h []string
-	pri := fmt.Sprintf("<%d>1", m.Priority())
-	h = append(h, m.format(pri)...)
+	pri := fmt.Sprintf("<%d>", m.Priority())
+	h = append(h, m.format(pri, m.Version)...)
 	return strings.Join(h, " ") + leadingSpaceIfNotColon(m.Content)
 }
 
@@ -84,7 +98,7 @@ func (m *Message) String() string {
 		h = append(h, m.Source.String())
 	}
 	pri := fmt.Sprintf("<%s,%s>", m.Facility, m.Severity)
-	h = append(h, m.format(pri)...)
+	h = append(h, m.format(pri, 1)...)
 	return strings.Join(h, " ") + leadingSpaceIfNotColon(m.Content)
 }
 
@@ -146,17 +160,17 @@ func parseMessage(pkt []byte) (*Message, error) {
 
 //-------------------------------------------------------------------------------------------------
 
+const (
+	rfc3164LayoutNoYear   = "Jan _2 15:04:05"
+	rfc3164LayoutWithYear = "2006 Jan _2 15:04:05"
+)
+
 func parseRFC3164Message(m *Message, s string) (*Message, error) {
 	s = strings.TrimLeftFunc(s, unicode.IsSpace)
 
-	const (
-		rfc3164Layout1 = "Jan _2 15:04:05"
-		rfc3164Layout2 = "2006 Jan _2 15:04:05"
-	)
-
 	if len(s) > 15 && s[15] == ' ' {
 		// date without year
-		ts, err := time.Parse(rfc3164Layout1, s[:15])
+		ts, err := time.Parse(rfc3164LayoutNoYear, s[:15])
 		if err == nil {
 			if ts.Year() == 0 {
 				// There will be unavoidable race errors at the very end of
@@ -168,7 +182,7 @@ func parseRFC3164Message(m *Message, s string) (*Message, error) {
 		}
 	} else if len(s) > 20 && s[20] == ' ' {
 		// date with year
-		ts, err := time.Parse(rfc3164Layout2, s[:20])
+		ts, err := time.Parse(rfc3164LayoutWithYear, s[:20])
 		if err == nil {
 			m.Timestamp = ts
 			s = s[20:]
@@ -222,12 +236,16 @@ func parseRFC3164Message(m *Message, s string) (*Message, error) {
 //-------------------------------------------------------------------------------------------------
 
 func parseRFC5424Message(m *Message, s string, hasBOM bool) (*Message, error) {
-	sp := strings.IndexByte(s, ' ')
-	if sp >= 0 {
-		ts, err := iso8601.ParseString(s[:sp])
-		if err == nil {
-			m.Timestamp = ts
-			s = s[sp+1:]
+	if strings.HasPrefix(s, "- ") {
+		s = s[2:] // no time field
+	} else {
+		sp := strings.IndexByte(s, ' ')
+		if sp >= 0 {
+			ts, err := iso8601.ParseString(s[:sp])
+			if err == nil {
+				m.Timestamp = ts
+				s = s[sp+1:]
+			}
 		}
 	}
 

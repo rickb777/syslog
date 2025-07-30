@@ -1,22 +1,39 @@
 package syslog
 
 import (
+	"fmt"
 	"log"
 	"net"
 	"os"
 	"strings"
 )
 
-type Server struct {
-	conns    []net.PacketConn
-	handlers []Handler
-	shutdown bool
-	l        Logger
+// Handler handles syslog messages
+type Handler interface {
+	// Handle should return [Message] (maybe modified) for further processing by
+	// other handlers, or return nil. If Handle is called with nil message it
+	// should clean up and shut down before returning nil.
+	Handle(*Message) *Message
 }
 
-// NewServer creates an idle server.
-func NewServer() *Server {
-	return &Server{l: log.New(os.Stderr, "", log.LstdFlags)}
+type Server struct {
+	conns    []net.PacketConn
+	queue    chan *Message
+	handlers []Handler
+	shutDown bool
+	l        Logger
+	debug    bool
+}
+
+// NewServer creates an idle server. The internal queue length can be specified and should be a
+// small positive number.
+func NewServer(qlen int) *Server {
+	s := &Server{
+		queue: make(chan *Message, qlen),
+		l:     log.New(os.Stderr, "", log.LstdFlags),
+	}
+	go s.passToHandlers()
+	return s
 }
 
 // SetLogger sets logger for server errors. A running server is rather quiet and
@@ -27,20 +44,29 @@ func (s *Server) SetLogger(l Logger) {
 	s.l = l
 }
 
+func (s *Server) SetDebug(on bool) {
+	s.debug = on
+}
+
 // AddHandler adds h to the internal ordered list of handlers.
 func (s *Server) AddHandler(h Handler) {
 	s.handlers = append(s.handlers, h)
 }
 
 // Listen starts goroutine that receives syslog messages on a specified address.
-// addr can be a path (for unix domain sockets) or host:port (for UDP).
+// addr can be a path (for Unix-domain sockets) or host:port (for UDP).
 func (s *Server) Listen(addr string) error {
+	if s.shutDown {
+		panic("Server is already shut down")
+	}
+
 	var c net.PacketConn
 	if strings.IndexRune(addr, ':') >= 0 {
 		a, err := net.ResolveUDPAddr("udp", addr)
 		if err != nil {
 			return err
 		}
+		//fmt.Println("Listening on", a)
 		c, err = net.ListenUDP("udp", a)
 		if err != nil {
 			return err
@@ -56,21 +82,34 @@ func (s *Server) Listen(addr string) error {
 		}
 	}
 	s.conns = append(s.conns, c)
+
 	go s.receiver(c)
 	return nil
 }
 
+// SigHup passes a hang-up signal to all handlers. This typically is used for log rotation etc.
+func (s *Server) SigHup() {
+	for _, h := range s.handlers {
+		if hu, ok := h.(interface{ SigHup() }); ok {
+			hu.SigHup()
+		}
+	}
+}
+
 // Shutdown stops the server.
 func (s *Server) Shutdown() {
-	s.shutdown = true
+	s.shutDown = true
 	for _, c := range s.conns {
 		err := c.Close()
 		if err != nil {
 			s.l.Fatalln(err)
 		}
 	}
-	s.passToHandlers(nil)
+	close(s.queue)
 	s.conns = nil
+	for _, h := range s.handlers {
+		h.Handle(nil)
+	}
 	s.handlers = nil
 }
 
@@ -78,21 +117,23 @@ func isNulCrLf(r rune) bool {
 	return r == 0 || r == '\r' || r == '\n'
 }
 
-func (s *Server) passToHandlers(m *Message) {
-	for _, h := range s.handlers {
-		m = h.Handle(m)
-		if m == nil {
-			break
+func (s *Server) passToHandlers() {
+	for m := range s.queue {
+		for _, h := range s.handlers {
+			m = h.Handle(m)
+			if m == nil {
+				break
+			}
 		}
 	}
 }
 
 func (s *Server) receiver(c net.PacketConn) {
-	buf := make([]byte, 65536)
+	buf := make([]byte, 64*1024)
 	for {
 		n, addr, err := c.ReadFrom(buf)
 		if err != nil {
-			if !s.shutdown {
+			if !s.shutDown {
 				s.l.Fatalln("Read error:", err)
 			}
 			return
@@ -104,7 +145,10 @@ func (s *Server) receiver(c net.PacketConn) {
 			s.l.Println(err.Error())
 		} else {
 			m.Source = addr
-			s.passToHandlers(m)
+			if s.debug {
+				fmt.Printf("%+v\n", *m)
+			}
+			s.queue <- m
 		}
 	}
 }
