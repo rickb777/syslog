@@ -1,5 +1,9 @@
 package syslog
 
+import (
+	"fmt"
+)
+
 type Facility byte
 
 const (
@@ -63,6 +67,27 @@ func (f Facility) String() string {
 	return facToStr[f]
 }
 
+func ParseFacility(s string) (Facility, error) {
+	for i, c := range facToStr {
+		if c == s {
+			return Facility(i), nil
+		}
+	}
+	return 0, fmt.Errorf("%s: unknown facility", s)
+}
+
+func ParseFacilities(words []string) ([]Facility, error) {
+	var facs []Facility
+	for _, w := range words {
+		fac, err := ParseFacility(w)
+		if err != nil {
+			return nil, err
+		}
+		facs = append(facs, fac)
+	}
+	return facs, nil
+}
+
 // Severity is the message severity defined in RFC5424.
 type Severity byte
 
@@ -93,4 +118,31 @@ func (s Severity) String() string {
 		return "unknown"
 	}
 	return sevToStr[s]
+}
+
+func ParseSeverity(s string) (Severity, error) {
+	for i, c := range sevToStr {
+		if c == s {
+			return Severity(i), nil
+		}
+	}
+	switch s {
+	case "warn":
+		return Warning, nil
+	case "error":
+		return Err, nil
+	}
+	return 0, fmt.Errorf("%s: unknown severity", s)
+}
+
+func ParseSeverities(words []string) ([]Severity, error) {
+	var sevs []Severity
+	for _, w := range words {
+		sev, err := ParseSeverity(w)
+		if err != nil {
+			return nil, err
+		}
+		sevs = append(sevs, sev)
+	}
+	return sevs, nil
 }

@@ -13,12 +13,12 @@ PORT=${2:-1514}
 
 OPTS="--server $HOST --port $PORT -t taggy --stderr"
 # the obsolete RFC3164 message format (still widely used)
-logger $OPTS    --rfc3164        --priority user.notice  Message RFC3164 one
+logger $OPTS    --rfc3164        --priority user.info    Message RFC3164 one
 logger $OPTS -i --rfc3164        --priority user.notice  Message RFC3164 two
 # the modern RFC5424 message format
 logger $OPTS -i --rfc5424        --priority user.warning Message RFC5424 three
 logger $OPTS -i --rfc5424=notq   --priority user.err     Message RFC5424 four
 logger $OPTS -i --rfc5424=notime --priority user.info    Message RFC5424 five
 logger $OPTS -i --rfc5424=nohost --priority user.info    Message RFC5424 six
-logger $OPTS    --rfc5424        --priority user.debug   Message RFC5424 seven
+logger $OPTS    --rfc5424        --priority daemon.debug Message RFC5424 seven
 

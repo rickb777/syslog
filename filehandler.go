@@ -12,23 +12,23 @@ import (
 // to open/create new one).
 type FileHandler struct {
 	filename     string
-	acceptFunc   func(*Message) bool
+	acceptFunc   Filter
 	f            io.StringWriter
 	propagateAll bool
 	l            Logger
 }
 
 // NewFileHandler handles syslog messages by writing them to a file.
-// The acceptFunc determines which messages are written; by default this is
-// all messages.
+// The acceptFunc determines which messages are written; if this is nil, it
+// accepts all messages.
 //
 // Downstream handlers see all the rejected messages. If propagateAll is true,
 // downstream handles also see the accepted messages.
 //
 // By default, I/O errors are written to [os.Stderr] using [log.Logger].
-func NewFileHandler(filename string, acceptFunc func(*Message) bool, propagateAll bool) *FileHandler {
+func NewFileHandler(filename string, acceptFunc Filter, propagateAll bool) *FileHandler {
 	if acceptFunc == nil {
-		acceptFunc = func(*Message) bool { return true }
+		acceptFunc = everything
 	}
 	h := &FileHandler{
 		filename:     filename,

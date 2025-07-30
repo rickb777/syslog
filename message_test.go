@@ -68,6 +68,8 @@ func TestParseMessage(t *testing.T) {
 		m    Message
 		in   []byte
 	}{
+
+		//------------------------------ RFC 3164 ------------------------------
 		{
 			name: "RFC3164 example 1: without year",
 			in:   []byte(`<34>Oct 11 22:14:15 mymachine su: 'su root' failed for lonvick on /dev/pts/8`),
@@ -83,6 +85,42 @@ func TestParseMessage(t *testing.T) {
 				MsgID:       "",
 				Data:        ``,
 				Content:     `: 'su root' failed for lonvick on /dev/pts/8`,
+			},
+		},
+		{
+			name: "RFC3164 example 2: with date",
+			in:   []byte(`<13>Feb  5 17:32:18 10.0.0.99 Use the BFG!`),
+			m: Message{
+				Time:        tx,
+				Facility:    User,
+				Severity:    Notice,
+				Version:     0,
+				Timestamp:   time.Date(2023, 2, 5, 17, 32, 18, 0, time.UTC),
+				Hostname:    "", // no requirement to recognise the IP address as a hostname
+				Application: "",
+				ProcID:      "",
+				MsgID:       "",
+				Data:        ``,
+				Content:     `10.0.0.99 Use the BFG!`, // contains the IP address
+			},
+		},
+		{
+			name: "RFC3164 example 3: malformed message",
+			in: []byte(`<165>Aug 24 05:34:00 CST 1987 mymachine myproc[10]: %% It's time to make the do-nuts.  %%  Ingredients: Mix=OK, Jelly=OK ` +
+				`# Devices: Mixer=OK, Jelly_Injector=OK, Frier=OK # Transport: Conveyer1=OK, Conveyer2=OK # %%`),
+			m: Message{
+				Time:        tx,
+				Facility:    Local4,
+				Severity:    Notice,
+				Version:     0,
+				Timestamp:   time.Date(2023, 8, 24, 5, 34, 0, 0, time.UTC),
+				Hostname:    "CST", // because time zone is not expected in RFC3164
+				Application: "myproc",
+				ProcID:      "10",
+				MsgID:       "",
+				Data:        ``,
+				Content: `: %% It's time to make the do-nuts.  %%  Ingredients: Mix=OK, Jelly=OK ` +
+					`# Devices: Mixer=OK, Jelly_Injector=OK, Frier=OK # Transport: Conveyer1=OK, Conveyer2=OK # %%`,
 			},
 		},
 		{
@@ -102,6 +140,8 @@ func TestParseMessage(t *testing.T) {
 				Content:     `: That's All Folks!`,
 			},
 		},
+
+		//------------------------------ RFC 5424 ------------------------------
 		{
 			name: "RFC5424 example 1: with BOM but no structured data",
 			in: concat([]byte(`<34>1 2003-10-11T22:14:15.003Z mymachine.example.com su - ID47 - `),

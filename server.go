@@ -17,20 +17,22 @@ type Handler interface {
 }
 
 type Server struct {
-	conns    []net.PacketConn
-	queue    chan *Message
-	handlers []Handler
-	shutDown bool
-	l        Logger
-	debug    bool
+	conns      []net.PacketConn
+	queue      chan *Message
+	handlers   []Handler
+	acceptFunc Filter
+	shutDown   bool
+	l          Logger
+	debug      bool
 }
 
 // NewServer creates an idle server. The internal queue length can be specified and should be a
 // small positive number.
 func NewServer(qlen int) *Server {
 	s := &Server{
-		queue: make(chan *Message, qlen),
-		l:     log.New(os.Stderr, "", log.LstdFlags),
+		queue:      make(chan *Message, qlen),
+		acceptFunc: everything,
+		l:          log.New(os.Stderr, "", log.LstdFlags),
 	}
 	go s.passToHandlers()
 	return s
@@ -42,6 +44,10 @@ func NewServer(qlen int) *Server {
 // application is halted. Using SetLogger you can change this behavior.
 func (s *Server) SetLogger(l Logger) {
 	s.l = l
+}
+
+func (s *Server) SetFilter(f Filter) {
+	s.acceptFunc = f
 }
 
 func (s *Server) SetDebug(on bool) {
@@ -143,7 +149,7 @@ func (s *Server) receiver(c net.PacketConn) {
 		m, err := parseMessage(bs)
 		if err != nil {
 			s.l.Println(err.Error())
-		} else {
+		} else if s.acceptFunc(m) {
 			m.Source = addr
 			if s.debug {
 				fmt.Printf("%+v\n", *m)
