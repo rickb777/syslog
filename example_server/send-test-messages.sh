@@ -21,3 +21,4 @@ logger $OPTS -i --rfc5424=notq   --priority user.err     Message RFC5424 four
 logger $OPTS -i --rfc5424=notime --priority user.info    Message RFC5424 five
 logger $OPTS -i --rfc5424=nohost --priority user.info    Message RFC5424 six
 logger $OPTS    --rfc5424        --priority user.debug   Message RFC5424 seven
+
