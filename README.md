@@ -4,7 +4,7 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/rickb777/syslog)](https://goreportcard.com/report/github.com/rickb777/syslog)
 [![Issues](https://img.shields.io/github/issues/rickb777/syslog.svg)](https://github.com/rickb777/syslog/issues)
 
-Using this library you can easy implement your own Syslog server that:
+Using this library you can easily implement your own Syslog server that:
 
 1. Can listen on specified UDP ports and Unix domain sockets.
 2. Can listen on multiple ports/sockets simultaneously.

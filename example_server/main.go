@@ -20,11 +20,6 @@ func (printHandler) Handle(m *syslog.Message) *syslog.Message {
 	return m
 }
 
-// Simple filter for 'user' messages
-func filter(m *syslog.Message) bool {
-	return m.Facility == syslog.User
-}
-
 var (
 	port     = flag.Int("port", 514, "port to listen on")
 	file     = flag.String("file", "", "file to write messages to")
