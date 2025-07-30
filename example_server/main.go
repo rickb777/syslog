@@ -18,12 +18,12 @@ type handler struct {
 
 // Simple filter for named/bind messages that can be used with BaseHandler
 func filter(m *syslog.Message) bool {
-	return m.Tag == "named" || m.Tag == "bind"
+	return m.Data == "named" || m.Data == "bind"
 }
 
 func newHandler() *handler {
 	h := handler{syslog.NewBaseHandler(5, filter, false)}
-	go h.mainLoop() // BaseHandler needs some gorutine that reads from its queue
+	go h.mainLoop() // BaseHandler needs some goroutine that reads from its queue
 	return &h
 }
 
@@ -50,7 +50,11 @@ func main() {
 	flag.Parse()
 
 	s := syslog.NewServer()
-	s.AddHandler(newHandler())
+	if *file != "" {
+		s.AddHandler(syslog.NewFileHandler(*file, 5, nil, false))
+	} else {
+		s.AddHandler(newHandler())
+	}
 	err := s.Listen(fmt.Sprintf("0.0.0.0:%d", *port))
 	if err != nil {
 		log.Fatal(err)

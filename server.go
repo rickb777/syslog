@@ -5,15 +5,13 @@ import (
 	"net"
 	"os"
 	"strings"
-	"unicode"
 )
 
 type Server struct {
 	conns    []net.PacketConn
 	handlers []Handler
 	shutdown bool
-	tagrunes map[rune]bool
-	l        FatalLogger
+	l        Logger
 }
 
 // NewServer creates an idle server.
@@ -25,7 +23,7 @@ func NewServer() *Server {
 // logs only fatal errors using [FatalLogger] interface. By default, the standard Go
 // logger is used so errors are written to stderr, after which the whole
 // application is halted. Using SetLogger you can change this behavior.
-func (s *Server) SetLogger(l FatalLogger) {
+func (s *Server) SetLogger(l Logger) {
 	s.l = l
 }
 
@@ -76,23 +74,8 @@ func (s *Server) Shutdown() {
 	s.handlers = nil
 }
 
-func isNotAlnum(r rune) bool {
-	return !(unicode.IsLetter(r) || unicode.IsNumber(r))
-}
-
-func (s *Server) isNotAlnum(r rune) bool {
-	return isNotAlnum(r) && !s.tagrunes[r]
-}
-
 func isNulCrLf(r rune) bool {
 	return r == 0 || r == '\r' || r == '\n'
-}
-
-func (s *Server) AddAllowedRunes(allowed string) {
-	s.tagrunes = make(map[rune]bool)
-	for _, r := range allowed {
-		s.tagrunes[r] = true
-	}
 }
 
 func (s *Server) passToHandlers(m *Message) {
@@ -114,7 +97,14 @@ func (s *Server) receiver(c net.PacketConn) {
 			}
 			return
 		}
-		m := parseMessage(buf[:n], addr, s.isNotAlnum)
-		s.passToHandlers(m)
+
+		bs := buf[:n]
+		m, err := parseMessage(bs)
+		if err != nil {
+			s.l.Println(err.Error())
+		} else {
+			m.Source = addr
+			s.passToHandlers(m)
+		}
 	}
 }

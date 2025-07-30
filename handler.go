@@ -12,22 +12,22 @@ type Handler interface {
 // implements [Handler] interface using nonblocking queuing of messages and
 // simple message filtering.
 type BaseHandler struct {
-	queue  chan *Message
-	end    chan struct{}
-	filter func(*Message) bool
-	ft     bool // when true, always chain every message to the next handler
+	queue       chan *Message
+	end         chan struct{}
+	discardFunc func(*Message) bool
+	ft          bool // when true, always chain every message to the next handler
 }
 
-// NewBaseHandler creates [BaseHandler] using specified filter. If filter is nil
+// NewBaseHandler creates [BaseHandler] using specified discardFunc. If discardFunc is nil
 // or if it returns true, messages are passed to [BaseHandler] internal queue
-// (of qlen length). If filter returns false or ft is true, messages are returned
+// (of qlen length). If discardFunc returns false or ft is true, messages are returned
 // to server for future processing by other handlers.
 func NewBaseHandler(qlen int, filter func(*Message) bool, ft bool) *BaseHandler {
 	return &BaseHandler{
-		queue:  make(chan *Message, qlen),
-		end:    make(chan struct{}),
-		filter: filter,
-		ft:     ft,
+		queue:       make(chan *Message, qlen),
+		end:         make(chan struct{}),
+		discardFunc: filter,
+		ft:          ft,
 	}
 }
 
@@ -41,8 +41,8 @@ func (h *BaseHandler) Handle(m *Message) *Message {
 		return nil
 	}
 
-	if h.filter != nil && !h.filter(m) {
-		// m doesn't match the filter
+	if h.discardFunc != nil && !h.discardFunc(m) {
+		// m doesn't match the discardFunc
 		return m
 	}
 

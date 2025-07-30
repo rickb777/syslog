@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 )
 
@@ -48,7 +49,8 @@ func (h *FileHandler) mainLoop() {
 		select {
 		case <-sq: // SIGHUP probably from logrotate
 			h.checkErr(h.closeFile())
-			h.f = nil
+			h.f = nil // will re-open in saveMessage
+
 		case m, ok := <-mq: // message to save
 			if !ok {
 				if h.f != nil {
@@ -74,15 +76,17 @@ func (h *FileHandler) closeFile() error {
 func (h *FileHandler) saveMessage(m *Message) {
 	var err error
 	if h.f == nil {
-		h.f, err = os.OpenFile(
-			h.filename,
-			os.O_WRONLY|os.O_APPEND|os.O_CREATE,
-			0620,
-		)
+		err = os.MkdirAll(filepath.Dir(h.filename), 0750)
+		if h.checkErr(err) {
+			return
+		}
+
+		h.f, err = os.OpenFile(h.filename, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0620)
 		if h.checkErr(err) {
 			return
 		}
 	}
+
 	_, err = h.f.WriteString(m.String() + "\n")
 	h.checkErr(err)
 }

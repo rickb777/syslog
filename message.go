@@ -3,7 +3,7 @@ package syslog
 import (
 	"bytes"
 	"fmt"
-	"log"
+	"github.com/rickb777/iso8601/v2"
 	"net"
 	"strconv"
 	"strings"
@@ -13,19 +13,23 @@ import (
 
 // Message is a Syslog message.
 type Message struct {
-	Time   time.Time
-	Source net.Addr
+	Time   time.Time // locally determined
+	Source net.Addr  // from network socket
+	//--- Header ---
 	Facility
 	Severity
 	Version     int       // Syslog message version
-	Timestamp   time.Time // optional
-	Hostname    string    // optional
-	Application string    // optional
-	PID         int       //
-	Tag         string    // message tag as defined in RFC 3164
-	Content     string    // message content as defined in RFC 3164
-	Tag1        string    // alternate message tag (white rune as separator)
-	Content1    string    // alternate message content (white rune as separator)
+	Timestamp   time.Time // absent | RFC3339
+	Hostname    string    // absent | 1*255PRINTUSASCII
+	Application string    // absent | 1*48PRINTUSASCII (Application, ProcID, MsgID) is the RFC3164 Tag
+	ProcID      string    // absent | 1*128PRINTUSASCII
+	MsgID       string    // absent | 1*32PRINTUSASCII
+	Data        string    // structured data as defined in RFC 5424 like `[id item="value"]
+	Content     string    // message content
+}
+
+func (m *Message) Priority() int {
+	return int(m.Facility)<<3 | int(m.Severity)
 }
 
 // NetSrc only network part of Source as string (IP for UDP or Name for UDS)
@@ -42,113 +46,298 @@ func (m *Message) NetSrc() string {
 	return m.Source.String()
 }
 
-func (m *Message) String() string {
-	const (
-		timeLayout      = "2006-01-02 15:04:05"
-		timestampLayout = "01-02 15:04:05"
-	)
-	var h []string
-	h = append(h, m.Time.Format(timeLayout))
-
+func (m *Message) format(pri string) []string {
+	h := []string{pri}
 	if !m.Timestamp.IsZero() {
-		h = append(h, m.Timestamp.Format(timestampLayout))
+		h = append(h, m.Timestamp.Format(time.RFC3339))
+	} else if !m.Time.IsZero() {
+		h = append(h, m.Time.Format(time.RFC3339))
 	}
-	if m.Source != nil {
-		h = append(h, m.Source.String())
-	}
-	h = append(h, fmt.Sprintf("<%s,%s>", m.Facility, m.Severity))
 	if m.Hostname != "" {
 		h = append(h, m.Hostname)
 	}
 	if m.Application != "" {
 		h = append(h, m.Application)
 	}
-	if m.PID >= 0 {
-		h = append(h, strconv.Itoa(m.PID))
+	if m.ProcID != "" {
+		h = append(h, m.ProcID)
 	}
-	h = append(h, m.Tag)
-	h = append(h, m.Content)
-	return strings.Join(h, " ")
+	if m.MsgID != "" {
+		h = append(h, m.MsgID)
+	}
+	if m.Data != "" {
+		h = append(h, m.Data)
+	}
+	return h
 }
 
-func parseMessage(pkt []byte, addr net.Addr, isNotAlnum func(r rune) bool) *Message {
+func (m *Message) Format() string {
+	var h []string
+	pri := fmt.Sprintf("<%d>1", m.Priority())
+	h = append(h, m.format(pri)...)
+	return strings.Join(h, " ") + leadingSpaceIfNotColon(m.Content)
+}
+
+func (m *Message) String() string {
+	var h []string
+	if m.Source != nil {
+		h = append(h, m.Source.String())
+	}
+	pri := fmt.Sprintf("<%s,%s>", m.Facility, m.Severity)
+	h = append(h, m.format(pri)...)
+	return strings.Join(h, " ") + leadingSpaceIfNotColon(m.Content)
+}
+
+func leadingSpaceIfNotColon(s string) string {
+	if strings.HasPrefix(s, ":") {
+		return s
+	}
+	return " " + s
+}
+
+//-------------------------------------------------------------------------------------------------
+
+func parseMessage(pkt []byte) (*Message, error) {
 	var n int
-	m := &Message{
-		Source: addr,
-		Time:   now(),
+	ts := now()
+	m := Message{
+		Time:      ts,
+		Timestamp: ts,
 	}
 
-	// Parse priority (if it exists)
-	prio := 13 // default priority
-	hasPrio := false
+	bs := bytes.TrimRightFunc(pkt, isNulCrLf)
 
-	if pkt[0] == '<' {
-		n = 1 + bytes.IndexByte(pkt[1:], '>')
+	bom := findBOM(bs)
+	if bom >= 0 { // Byte Order Mark was found
+		m.Content = string(bs[bom+3:])
+		bs = bs[:bom]
+	}
+
+	s := string(bs)
+
+	//---------- Parse priority (if it exists)
+	prio := 13 // default priority
+
+	// we treat PRI as optional although RFC3164 and RFC5424 require it to be present
+	if s[0] == '<' {
+		n = 1 + strings.IndexByte(s[1:], '>')
 		if n > 1 && n < 5 {
-			p, err := strconv.Atoi(string(pkt[1:n]))
-			if err == nil && p >= 0 {
-				hasPrio = true
-				prio = p
-				pkt = pkt[n+1:]
+			p, err := strconv.Atoi(s[1:n])
+			if err != nil {
+				return nil, fmt.Errorf("%s: message has invalid priority (%s)",
+					s[1:n], cropString(s, 50))
 			}
+			prio = p
+			s = s[n+1:]
 		}
 	}
 
 	m.Severity = Severity(prio & 0x07)
 	m.Facility = Facility(prio >> 3)
 
-	hostnameOffset := 0
-	ts := time.Now()
-
-	// Parse header (if exists)
-	if hasPrio && len(pkt) >= 26 && pkt[25] == ' ' && pkt[15] != ' ' {
-		// OK, it looks like we're dealing with a RFC 5424-style packet
-		ts, err := time.Parse(time.RFC3339, string(pkt[:25]))
-		if err == nil && !ts.IsZero() {
-			// Time parsed correctly.  This is most certainly a RFC 5424-style packet.
-			// Hostname starts at pkt[26]
-			hostnameOffset = 26
-		}
-	} else if hasPrio && len(pkt) >= 16 && pkt[15] == ' ' {
-		// Looks like we're dealing with a RFC 3164-style packet
-		layout := "Jan _2 15:04:05"
-		ts, err := time.Parse(layout, string(pkt[:15]))
-		if err == nil && !ts.IsZero() {
-			// Time parsed correctly.   This is most certainly a RFC 3164-style packet.
-			hostnameOffset = 16
-		}
+	if strings.HasPrefix(s, "1 ") {
+		m.Version = 1
+		s = s[2:]
+		return parseRFC5424Message(&m, s, bom >= 0)
 	}
 
-	if hostnameOffset == 0 {
-		log.Printf("Packet did not parse correctly:\n%v\n", string(pkt[:]))
-	} else {
-		n = hostnameOffset + bytes.IndexByte(pkt[hostnameOffset:], ' ')
-		if n != hostnameOffset-1 {
+	return parseRFC3164Message(&m, s)
+}
+
+//-------------------------------------------------------------------------------------------------
+
+func parseRFC3164Message(m *Message, s string) (*Message, error) {
+	s = strings.TrimLeftFunc(s, unicode.IsSpace)
+
+	const (
+		rfc3164Layout1 = "Jan _2 15:04:05"
+		rfc3164Layout2 = "2006 Jan _2 15:04:05"
+	)
+
+	if len(s) > 15 && s[15] == ' ' {
+		// date without year
+		ts, err := time.Parse(rfc3164Layout1, s[:15])
+		if err == nil {
+			if ts.Year() == 0 {
+				// There will be unavoidable race errors at the very end of
+				// December 31st / start of January 1st.
+				ts = ts.AddDate(m.Time.Year(), 0, 0)
+			}
 			m.Timestamp = ts
-			m.Hostname = string(pkt[hostnameOffset:n])
-			pkt = pkt[n+1:]
+			s = s[15:]
+		}
+	} else if len(s) > 20 && s[20] == ' ' {
+		// date with year
+		ts, err := time.Parse(rfc3164Layout2, s[:20])
+		if err == nil {
+			m.Timestamp = ts
+			s = s[20:]
 		}
 	}
-	_ = hostnameOffset
 
-	// Parse msg part
-	msg := string(bytes.TrimRightFunc(pkt, isNulCrLf))
-	n = strings.IndexFunc(msg, isNotAlnum)
-	if n != -1 {
-		m.Tag = msg[:n]
-		m.Content = msg[n:]
-	} else {
-		m.Content = msg
+	s = strings.TrimLeftFunc(s, unicode.IsSpace)
+
+	if strings.HasPrefix(s, "TZ") {
+		sp := nextSpace(s)
+		if 0 < sp && sp <= len(s) {
+			tz, err := strconv.Atoi(s[2:sp])
+			if err == nil && -12 <= tz && tz <= 12 {
+				m.Timestamp = m.Timestamp.In(time.FixedZone(s[:sp], tz*3600))
+			}
+			s = s[sp+1:]
+		}
 	}
-	msg = strings.TrimFunc(msg, unicode.IsSpace)
-	n = strings.IndexFunc(msg, unicode.IsSpace)
-	if n != -1 {
-		m.Tag1 = msg[:n]
-		m.Content1 = strings.TrimLeftFunc(msg[n+1:], unicode.IsSpace)
-	} else {
-		m.Content1 = msg
+
+	colon := indexRune(s, ':')
+	if colon < 0 {
+		m.Content = s
+		return m, nil
 	}
-	return m
+
+	m.Content = s[colon:]
+	s = s[:colon]
+
+	words := strings.Split(s, " ")
+	if len(words) > 0 {
+		m.Hostname = words[0]
+	}
+
+	if len(words) > 1 {
+		last := words[len(words)-1]
+		if strings.HasSuffix(last, "]") {
+			l := strings.IndexByte(last, '[')
+			if l > 0 {
+				m.Application = last[:l]
+				m.ProcID = last[l+1 : len(last)-1]
+			} else {
+				m.Application = last
+			}
+		} else {
+			m.Application = last
+		}
+	}
+	return m, nil
+}
+
+//-------------------------------------------------------------------------------------------------
+
+func parseRFC5424Message(m *Message, s string, hasBOM bool) (*Message, error) {
+	sp := strings.IndexByte(s, ' ')
+	if sp >= 0 {
+		ts, err := iso8601.ParseString(s[:sp])
+		if err == nil {
+			m.Timestamp = ts
+			s = s[sp+1:]
+		}
+	}
+
+	s = nextField(s, &m.Hostname)
+	s = nextField(s, &m.Application)
+	s = nextField(s, &m.ProcID)
+	s = nextField(s, &m.MsgID)
+
+	if strings.HasPrefix(s, "- ") {
+		m.Data = "-"
+		s = s[2:]
+	} else if strings.HasPrefix(s, "[") {
+		r := indexRune(s, ']')
+		for r >= 0 {
+			if r == len(s)-1 {
+				m.Data = s
+				s = s[r+1:]
+				break
+			} else if 0 < r && r < len(s) {
+				l := indexRune(s[r:], '[')
+				if l > 0 {
+					r2 := indexRune(s[r+l:], ']')
+					if r2 >= 0 {
+						r += r2 + l
+					}
+				} else {
+					r++
+					m.Data = s[:r]
+					s = s[r+1:]
+					r = indexRune(s, ']')
+				}
+			}
+		}
+	}
+
+	if !hasBOM { // no Byte Order Mark
+		if strings.HasPrefix(s, " ") {
+			s = s[1:]
+		}
+		m.Content = s
+	}
+
+	return m, nil
+}
+
+//-------------------------------------------------------------------------------------------------
+
+func nextField(s string, field *string) string {
+	if strings.HasPrefix(s, "- ") { // NILVALUE
+		*field = "-"
+		s = s[2:]
+	} else {
+		sp := nextSpace(s)
+		if 0 < sp && sp <= len(s) && s[0] != '[' {
+			*field = s[:sp]
+			s = s[sp+1:]
+		}
+	}
+	return s
+}
+
+func nextSpace(s string) int {
+	for i, r := range s {
+		if r == ' ' {
+			return i
+		} else if r < 32 || r > 126 {
+			return 0 // anything outside PRINTASCII %d33-126
+		}
+	}
+
+	return len(s) // not found
+}
+
+// indexRune finds the next c in s, skipping any characters escaped with '\'.
+func indexRune(s string, c rune) int {
+	esc := false
+
+	for i, r := range s {
+		switch r {
+		case '\\':
+			esc = !esc
+		case c:
+			if !esc {
+				return i
+			}
+			esc = false
+		default:
+			esc = false
+		}
+	}
+
+	return -1 // not found
+}
+
+func cropString(s string, crop int) string {
+	if len(s) > crop {
+		return s[:crop] + "..."
+	}
+	return s
+}
+
+// findBOM finds the byte order mark, if present.
+func findBOM(bs []byte) int {
+	// We don't care about the possibility of 0xEF occurring more than once because the
+	// header part is always only 7-bit ASCII, so any subsequent 0xEF will be after the BOM.
+	bom := bytes.IndexByte(bs, 0xEF)
+	if 0 <= bom && bs[bom+1] == 0xBB && bs[bom+2] == 0xBF {
+		return bom
+	}
+	return -1
 }
 
 var now = func() time.Time { return time.Now() }
