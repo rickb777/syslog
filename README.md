@@ -21,6 +21,6 @@ Using this library you can easy implement your own syslog server that:
 
 1. Can listen on specified UDP ports and Unix domain sockets.
 
-2. Can pass parsed Syslog messages to your own handlers so your code can analyze and respond for them.
+2. Can pass parsed Syslog messages to your own handlers so your code can analyze and respond to them.
 
-and [example server](https://github.com/rickb777/syslog/blob/master/example_server/main.go).
+See the [example server](https://github.com/rickb777/syslog/blob/master/example_server/main.go).
