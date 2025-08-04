@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"github.com/rickb777/syslog"
+	"github.com/rickb777/syslog/internal/env"
 	"log"
 	"os"
 	"os/signal"
@@ -21,30 +22,58 @@ func (printHandler) Handle(m *syslog.Message) *syslog.Message {
 }
 
 var (
-	port     = flag.Int("port", 514, "port to listen on")
-	file     = flag.String("file", "", "file to write messages to")
-	priority = flag.String("priority", "", "ignore messages that are not this priority\n"+
-		"Format: *.* | user.* | *.notice | kern,auth.notice,warning,err - where * is a wildcard")
-	debug = flag.Bool("v", false, "verbose information")
+	port     int
+	file     string
+	priority string
+	truncate bool
+	debug    bool
 )
+
+func flags() {
+	portDefault, e1 := env.GetInt("PORT", 514)
+	truncDefault, e2 := env.GetBool("TRUNCATE", false)
+	fileDefault := env.GetString("FILE", "")
+
+	flag.IntVar(&port, "port", portDefault, "port to listen on")
+	flag.StringVar(&file, "file", fileDefault, "file to write messages to")
+	flag.StringVar(&priority, "priority", env.GetString("PRIORITY", ""),
+		"ignore messages that are not this priority\n"+
+			"Format: *.* | user.* | *.notice | kern,auth.notice,warning,err - where * is a wildcard")
+	flag.BoolVar(&truncate, "truncate", truncDefault, "truncate when opening logfiles instead of appending")
+	flag.BoolVar(&truncate, "t", truncDefault, "alias for -truncate")
+	flag.BoolVar(&debug, "v", false, "verbose information")
+
+	flag.Parse()
+
+	if e1 != nil {
+		fmt.Fprintln(os.Stderr, "PORT", e1)
+		flag.Usage()
+		os.Exit(1)
+	}
+	if e2 != nil {
+		fmt.Fprintln(os.Stderr, "TRUNCATE", e2)
+		flag.Usage()
+		os.Exit(1)
+	}
+}
 
 // Create a server with one handler and run one listen goroutine
 func main() {
-	flag.Parse()
+	flags()
 
 	s := syslog.NewServer(100)
-	s.SetDebug(*debug)
-	if *file != "" {
-		s.AddHandler(syslog.NewFileHandler(*file, nil, false))
+	s.SetDebug(debug)
+	if file != "" {
+		s.AddHandler(syslog.NewFileHandler(file, !truncate))
 	} else {
 		s.AddHandler(printHandler{})
 	}
 
-	if *priority != "" {
-		s.SetFilter(parsePriorityFilter(*priority))
+	if priority != "" {
+		s.SetFilter(parsePriorityFilter(priority))
 	}
 
-	err := s.Listen(fmt.Sprintf(":%d", *port))
+	err := s.Listen(fmt.Sprintf(":%d", port))
 	if err != nil {
 		log.Fatalln(err)
 	}

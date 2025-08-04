@@ -1,4 +1,4 @@
 /.idea/
 /syslog
-/syslog.*
+/syslog.a*
 /*.log
