@@ -15,6 +15,7 @@ type FileHandler struct {
 	acceptFunc   Filter
 	fm           filenameMangler
 	f            map[fileID]io.StringWriter
+	format       string
 	appendMode   int
 	propagateAll bool
 	l            Logger
@@ -33,10 +34,11 @@ type FileHandler struct {
 // either case.
 //
 // By default, I/O errors are written to [os.Stderr] using [log.Logger].
-func NewFileHandler(filename string, append bool) *FileHandler {
+func NewFileHandler(filename, format string, append bool) *FileHandler {
 	h := &FileHandler{
 		fm:         newFilenameMangler(filename),
 		f:          make(map[fileID]io.StringWriter),
+		format:     format,
 		appendMode: os.O_TRUNC,
 		acceptFunc: func(*Message) bool { return true },
 		l:          log.New(os.Stderr, "", log.LstdFlags),
@@ -113,8 +115,7 @@ func (h *FileHandler) saveMessage(m *Message) {
 	if f == nil {
 		filename := h.fm.name(m)
 
-		err = os.MkdirAll(filepath.Dir(filename), 0750)
-		if h.checkErr(err) {
+		if h.checkErr(os.MkdirAll(filepath.Dir(filename), 0750)) {
 			return
 		}
 
@@ -126,8 +127,12 @@ func (h *FileHandler) saveMessage(m *Message) {
 		h.f[id] = f
 	}
 
-	_, err = f.WriteString(m.Format("%%") + "\n")
-	h.checkErr(err)
+	h.checkErr2(f.WriteString(m.Format(h.format)))
+	h.checkErr2(f.WriteString("\n"))
+}
+
+func (h *FileHandler) checkErr2(_ any, err error) bool {
+	return h.checkErr(err)
 }
 
 func (h *FileHandler) checkErr(err error) bool {

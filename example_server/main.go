@@ -26,11 +26,12 @@ func flags() {
 	truncDefault, e2 := env.GetBool("TRUNCATE", false)
 	fileDefault := env.GetString("FILE", "")
 	formatDefault := env.GetString("FORMAT", syslog.RFCFormat)
+	priorityDefault := env.GetString("PRIORITY", "")
 
 	flag.IntVar(&port, "port", portDefault, "port to listen on")
 	flag.StringVar(&file, "file", fileDefault, "file to write messages to")
 	flag.StringVar(&format, "format", formatDefault, "format to use for messages")
-	flag.StringVar(&priority, "priority", env.GetString("PRIORITY", ""),
+	flag.StringVar(&priority, "priority", priorityDefault,
 		"ignore messages that are not this priority\n"+
 			"Format: *.* | user.* | *.notice | kern,auth.notice,warning,err - where * is a wildcard")
 	flag.BoolVar(&truncate, "truncate", truncDefault, "truncate when opening logfiles instead of appending")
@@ -49,6 +50,14 @@ func flags() {
 		flag.Usage()
 		os.Exit(1)
 	}
+
+	if debug {
+		fmt.Printf("PORT=%d\n", port)
+		fmt.Printf("FILE=%s\n", file)
+		fmt.Printf("FORMAT=%s\n", format)
+		fmt.Printf("TRUNCATE=%v\n", truncate)
+		fmt.Printf("PRIORITY=%v\n", priority)
+	}
 }
 
 // Create a server with one handler and run one listen goroutine
@@ -58,7 +67,7 @@ func main() {
 	s := syslog.NewServer(100)
 	s.SetDebug(debug)
 	if file != "" {
-		s.AddHandler(syslog.NewFileHandler(file, !truncate))
+		s.AddHandler(syslog.NewFileHandler(file, format, !truncate))
 	} else {
 		s.AddHandler(printHandler{})
 	}

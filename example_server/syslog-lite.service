@@ -12,11 +12,11 @@ Wants=network-online.target systemd-networkd-wait-online.service
 ; Sets the interval during which starts are limited with StartLimitBurst.
 StartLimitIntervalSec=60
 ; No more than this number of restarts will happen per StartLimitInterval.
-StartLimitBurst=10
+StartLimitBurst=5
 
 [Service]
-WorkingDirectory=/var/run/syslog-lite
-ExecStart=/usr/local/bin/syslog-lite notice
+;WorkingDirectory=/var/run/syslog-lite
+ExecStart=/usr/local/bin/syslog-lite
 ExecReload=/bin/kill -HUP $MAINPID
 
 ; Run slightly below interactive priority
@@ -26,7 +26,7 @@ Nice=5
 Restart=on-failure
 
 ; User and group the process will run as.
-User=syslog
+User=sys
 Group=adm
 
 ; Local configuration will be read from this directory.
@@ -34,46 +34,20 @@ Group=adm
 ; They are *not* shell syntax, although they are similar.
 EnvironmentFile=/etc/default/syslog-lite.conf
 
+; Increase the default a bit in order to allow many simultaneous
+; files to be monitored, we might need a lot of fds.
+LimitNOFILE=16384
+
 ; The following additional security directives further retrict privileges that can be gained by the service.
 ; Note that you may have to add capabilities required by any plugins in use.
-;CapabilityBoundingSet=CAP_NET_BIND_SERVICE
-;AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE CAP_SYS_ADMIN CAP_SYSLOG
+AmbientCapabilities=CAP_NET_BIND_SERVICE
 
-; Limit the number of file descriptors; see `man systemd.exec` for more limit settings.
-;LimitNOFILE=1048576
-; Unmodified app is not expected to use more than that.
-;LimitNPROC=64
-
-; Use private /tmp and /var/tmp, which are discarded after app stops.
-;PrivateTmp=true
-
-; Use a minimal /dev
-;PrivateDevices=true
-
-; Prevent alteration of /home, /root, and /run/user.
-;ProtectHome=read-only
-
-; Make /usr, /boot, /etc and possibly some more folders read-only.
-;ProtectSystem=full
-
-; Make kernel variables in /proc read-only (newer systemd versions only).
-;ProtectKernelTunables=true
-
-; Disable module loading (newer systemd versions only).
-;ProtectKernelModules=true
-
-; Make Linux control groups read-only (newer systemd versions only).
-;ProtectControlGroups=true
-
-; … exceptions that still remain writable
-;   This merely retains r/w access rights, it does not add any new. Must still be writable on the host!
-;ReadWriteDirectories=
-;ReadOnlyPaths=
-;InaccessiblePaths=
-
-; Ensures that the service process and all its children can never gain new privileges
-; (e.g. via setuid or setgid bits, or filesystem capabilities).
-;NoNewPrivileges=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+NoNewPrivileges=yes
+ProtectHome=read-only
+ProtectClock=yes
+ProtectHostname=yes
 
 [Install]
 WantedBy=multi-user.target

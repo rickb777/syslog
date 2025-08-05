@@ -1,4 +1,4 @@
 /.idea/
-/syslog
-/syslog.a*
+syslog.amd64
+syslog.arm64
 /*.log
