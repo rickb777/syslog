@@ -1,14 +1,11 @@
 package syslog
 
 import (
-	"bytes"
 	"fmt"
-	"github.com/rickb777/iso8601/v2"
 	"net"
 	"strconv"
 	"strings"
 	"time"
-	"unicode"
 )
 
 // Message is a Syslog message.
@@ -46,316 +43,222 @@ func (m *Message) NetSrc() string {
 	return m.Source.String()
 }
 
-func (m *Message) format(pri string, version int) []string {
-	var h []string
-	t := m.Timestamp
-	if t.IsZero() {
-		t = m.Time
-	}
-
-	if version == 0 {
-		h = append(h, fmt.Sprintf("%s%s", pri, t.Format(rfc3164LayoutNoYear)))
-	} else {
-		h = append(h, fmt.Sprintf("%s%d %s", pri, version, t.Format(time.RFC3339)))
-	}
-
-	if m.Hostname != "" {
-		h = append(h, m.Hostname)
-	}
-
-	if version == 0 && m.Application != "" && m.ProcID != "" {
-		h = append(h, fmt.Sprintf("%s[%s]", m.Application, m.ProcID))
-	} else {
-		if m.Application != "" {
-			h = append(h, m.Application)
-		}
-		if m.ProcID != "" {
-			h = append(h, m.ProcID)
-		}
-	}
-
-	if m.MsgID != "" {
-		h = append(h, m.MsgID)
-	}
-
-	if m.Data != "" {
-		h = append(h, m.Data)
-	}
-
-	return h
-}
-
-func (m *Message) Format() string {
-	var h []string
-	pri := fmt.Sprintf("<%d>", m.Priority())
-	h = append(h, m.format(pri, m.Version)...)
-	return strings.Join(h, " ") + leadingSpaceIfNotColon(m.Content)
-}
-
+// String produces a slightly-more verbose rendering than [Message.RFC5424].
 func (m *Message) String() string {
-	var h []string
-	if m.Source != nil {
-		h = append(h, m.Source.String())
-	}
-	pri := fmt.Sprintf("<%s,%s>", m.Facility, m.Severity)
-	h = append(h, m.format(pri, 1)...)
-	return strings.Join(h, " ") + leadingSpaceIfNotColon(m.Content)
+	v := max(m.Version, 1)
+	return m.format("%N<%F,%S>%V %T %H %A %P %M %D %C", v)
 }
 
-func leadingSpaceIfNotColon(s string) string {
-	if strings.HasPrefix(s, ":") {
-		return s
-	}
-	return " " + s
+// RFC5424 calls Format("%Z%V%T%H%A%P%I%D%C") with the version set to at least 1.
+// This produces a rendering according to RFC5424 regardless of the message version.
+func (m *Message) RFC5424() string {
+	v := max(m.Version, 1)
+	return m.format("<%Z>%V %T %H %A %P %M %D %C", v)
 }
 
-//-------------------------------------------------------------------------------------------------
+// RFC3164Format produces a rendering quite similar to RFC3164, although this RFC is not very specific.
+const RFC3164Format = "<%Z>%v %T %H %A %P %M %D %C"
 
-func parseMessage(pkt []byte) (*Message, error) {
-	var n int
-	ts := now()
-	m := Message{
-		Time:      ts,
-		Timestamp: ts,
-	}
-
-	bs := bytes.TrimRightFunc(pkt, isNulCrLf)
-
-	bom := findBOM(bs)
-	if bom >= 0 { // Byte Order Mark was found
-		m.Content = string(bs[bom+3:])
-		bs = bs[:bom]
-	}
-
-	s := string(bs)
-
-	//---------- Parse priority (if it exists)
-	prio := 13 // default priority
-
-	// we treat PRI as optional although RFC3164 and RFC5424 require it to be present
-	if s[0] == '<' {
-		n = 1 + strings.IndexByte(s[1:], '>')
-		if n > 1 && n < 5 {
-			p, err := strconv.Atoi(s[1:n])
-			if err != nil {
-				return nil, fmt.Errorf("%s: message has invalid priority (%s)",
-					s[1:n], cropString(s, 50))
-			}
-			prio = p
-			s = s[n+1:]
-		}
-	}
-
-	m.Severity = Severity(prio & 0x07)
-	m.Facility = Facility(prio >> 3)
-
-	if strings.HasPrefix(s, "1 ") {
-		m.Version = 1
-		s = s[2:]
-		return parseRFC5424Message(&m, s, bom >= 0)
-	}
-
-	return parseRFC3164Message(&m, s)
+// Format converts the message into a string representation. The format string
+// can contain a sequence of place markers:
+//
+//   - %A = application (and process ID if version 0)
+//   - %C = message content
+//   - %D = structured data
+//   - %F = facility
+//   - %H = hostname
+//   - %M = message ID
+//   - %P = process ID (if version >0)
+//   - %N = source network address
+//   - %S = severity
+//   - %T = timestamp (varies according to version)
+//   - %V = version
+//   - %v = version (only if >0)
+//   - %Y = timestamp year (RFC3164 version 0 messages only)
+//   - %Z = priority
+//
+// Everything else is rendered into the result.
+//
+// Blank fields are omitted from the result. Leading spaces are elided before each
+// blank field so that the result is compact.
+func (m *Message) Format(format string) string {
+	return m.format(format, m.Version)
 }
 
-//-------------------------------------------------------------------------------------------------
-
-const (
-	rfc3164LayoutNoYear   = "Jan _2 15:04:05"
-	rfc3164LayoutWithYear = "2006 Jan _2 15:04:05"
-)
-
-func parseRFC3164Message(m *Message, s string) (*Message, error) {
-	s = strings.TrimLeftFunc(s, unicode.IsSpace)
-
-	if len(s) > 15 && s[15] == ' ' {
-		// date without year
-		ts, err := time.Parse(rfc3164LayoutNoYear, s[:15])
-		if err == nil {
-			if ts.Year() == 0 {
-				// There will be unavoidable race errors at the very end of
-				// December 31st / start of January 1st.
-				ts = ts.AddDate(m.Time.Year(), 0, 0)
-			}
-			m.Timestamp = ts
-			s = s[15:]
-		}
-	} else if len(s) > 20 && s[20] == ' ' {
-		// date with year
-		ts, err := time.Parse(rfc3164LayoutWithYear, s[:20])
-		if err == nil {
-			m.Timestamp = ts
-			s = s[20:]
-		}
-	}
-
-	s = strings.TrimLeftFunc(s, unicode.IsSpace)
-
-	if strings.HasPrefix(s, "TZ") {
-		sp := nextSpace(s)
-		if 0 < sp && sp <= len(s) {
-			tz, err := strconv.Atoi(s[2:sp])
-			if err == nil && -12 <= tz && tz <= 12 {
-				m.Timestamp = m.Timestamp.In(time.FixedZone(s[:sp], tz*3600))
-			}
-			s = s[sp+1:]
-		}
-	}
-
-	colon := indexRune(s, ':')
-	if colon < 0 {
-		m.Content = s
-		return m, nil
-	}
-
-	m.Content = s[colon:]
-	s = s[:colon]
-
-	words := strings.Split(s, " ")
-	if len(words) > 0 {
-		m.Hostname = words[0]
-	}
-
-	if len(words) > 1 {
-		last := words[len(words)-1]
-		if strings.HasSuffix(last, "]") {
-			l := strings.IndexByte(last, '[')
-			if l > 0 {
-				m.Application = last[:l]
-				m.ProcID = last[l+1 : len(last)-1]
-			} else {
-				m.Application = last
-			}
-		} else {
-			m.Application = last
-		}
-	}
-	return m, nil
-}
-
-//-------------------------------------------------------------------------------------------------
-
-func parseRFC5424Message(m *Message, s string, hasBOM bool) (*Message, error) {
-	if strings.HasPrefix(s, "- ") {
-		s = s[2:] // no time field
-	} else {
-		sp := strings.IndexByte(s, ' ')
-		if sp >= 0 {
-			ts, err := iso8601.ParseString(s[:sp])
-			if err == nil {
-				m.Timestamp = ts
-				s = s[sp+1:]
-			}
-		}
-	}
-
-	s = nextField(s, &m.Hostname)
-	s = nextField(s, &m.Application)
-	s = nextField(s, &m.ProcID)
-	s = nextField(s, &m.MsgID)
-
-	if strings.HasPrefix(s, "- ") {
-		m.Data = "-"
-		s = s[2:]
-	} else if strings.HasPrefix(s, "[") {
-		r := indexRune(s, ']')
-		for r >= 0 {
-			if r == len(s)-1 {
-				m.Data = s
-				s = s[r+1:]
-				break
-			} else if 0 < r && r < len(s) {
-				l := indexRune(s[r:], '[')
-				if l > 0 {
-					r2 := indexRune(s[r+l:], ']')
-					if r2 >= 0 {
-						r += r2 + l
-					}
-				} else {
-					r++
-					m.Data = s[:r]
-					s = s[r+1:]
-					r = indexRune(s, ']')
-				}
-			}
-		}
-	}
-
-	if !hasBOM { // no Byte Order Mark
-		if strings.HasPrefix(s, " ") {
-			s = s[1:]
-		}
-		m.Content = s
-	}
-
-	return m, nil
-}
-
-//-------------------------------------------------------------------------------------------------
-
-func nextField(s string, field *string) string {
-	if strings.HasPrefix(s, "- ") { // NILVALUE
-		*field = "-"
-		s = s[2:]
-	} else {
-		sp := nextSpace(s)
-		if 0 < sp && sp <= len(s) && s[0] != '[' {
-			*field = s[:sp]
-			s = s[sp+1:]
-		}
-	}
-	return s
-}
-
-func nextSpace(s string) int {
-	for i, r := range s {
-		if r == ' ' {
-			return i
-		} else if r < 32 || r > 126 {
-			return 0 // anything outside PRINTASCII %d33-126
-		}
-	}
-
-	return len(s) // not found
-}
-
-// indexRune finds the next c in s, skipping any characters escaped with '\'.
-func indexRune(s string, c rune) int {
+func (m *Message) format(format string, version int) string {
+	sw := &buffer{}
+	bs := []byte(format)
+	space := false
 	esc := false
 
-	for i, r := range s {
-		switch r {
-		case '\\':
-			esc = !esc
-		case c:
-			if !esc {
-				return i
+	for _, b := range bs {
+		if b == '%' {
+			if esc {
+				sw.WriteByte(b)
 			}
+			esc = !esc
+		} else if esc {
+			space = m.f1(sw, b, space, version)
 			esc = false
-		default:
-			esc = false
+		} else {
+			sw.WriteByte(b)
 		}
 	}
-
-	return -1 // not found
+	return sw.String()
 }
 
-func cropString(s string, crop int) string {
-	if len(s) > crop {
-		return s[:crop] + "..."
+func (m *Message) f1(sw *buffer, b byte, space bool, version int) bool {
+	switch b {
+	case 'A':
+		if m.Application != "" {
+			if version == 0 && m.Application != "" && m.ProcID != "" {
+				fmt.Fprintf(sw, "%s[%s]", m.Application, m.ProcID)
+			} else {
+				sw.WriteString(m.Application)
+			}
+			space = true
+		}
+
+	case 'C':
+		if m.Content != "" {
+			if strings.HasPrefix(m.Content, ":") {
+				sw.TrimRightFunc(func(x byte) bool {
+					return x == ' '
+				})
+			}
+			sw.WriteString(m.Content)
+			space = true
+		}
+
+	case 'D':
+		if m.Data != "" {
+			sw.WriteString(m.Data)
+			space = true
+		}
+
+	case 'F':
+		sw.WriteString(m.Facility.String())
+
+	case 'H':
+		if m.Hostname != "" {
+			sw.WriteString(m.Hostname)
+			space = true
+		}
+
+	case 'M':
+		if m.MsgID != "" {
+			sw.WriteString(m.MsgID)
+			space = true
+		}
+
+	case 'N':
+		if m.Source != nil {
+			sw.WriteString(m.Source.String())
+			space = true
+		}
+
+	case 'P':
+		if m.ProcID != "" {
+			if version > 0 || m.Application == "" {
+				sw.WriteString(m.ProcID)
+				space = true
+			}
+		}
+
+	case 'S':
+		sw.WriteString(m.Severity.String())
+
+	case 'T':
+		if version == 0 {
+			sw.TrimRightFunc(func(x byte) bool {
+				return x == ' '
+			})
+			sw.WriteString(m.ts().Format(rfc3164LayoutNoYear))
+		} else {
+			sw.WriteString(m.ts().Format(time.RFC3339))
+		}
+		space = true
+
+	case 'V':
+		sw.WriteString(strconv.Itoa(version))
+		space = true
+
+	case 'v':
+		if version > 0 {
+			sw.WriteString(strconv.Itoa(version))
+			space = true
+		}
+
+	case 'Y':
+		if version == 0 {
+			sw.WriteString(strconv.Itoa(m.ts().Year()))
+			space = true
+		}
+
+	case 'Z':
+		sw.WriteString(strconv.Itoa(m.Priority()))
+		space = false
+
+	case ' ':
+		if space {
+			sw.WriteByte(b)
+			space = false
+		}
+
+	default:
+		sw.WriteByte('%')
+		sw.WriteByte(b)
 	}
-	return s
+	return space
 }
 
-// findBOM finds the byte order mark, if present.
-func findBOM(bs []byte) int {
-	// We don't care about the possibility of 0xEF occurring more than once because the
-	// header part is always only 7-bit ASCII, so any subsequent 0xEF will be after the BOM.
-	bom := bytes.IndexByte(bs, 0xEF)
-	if 0 <= bom && bs[bom+1] == 0xBB && bs[bom+2] == 0xBF {
-		return bom
+func (m *Message) ts() time.Time {
+	if m.Timestamp.IsZero() {
+		return m.Time
 	}
-	return -1
+	return m.Timestamp
 }
 
-var now = func() time.Time { return time.Now() }
+//-------------------------------------------------------------------------------------------------
+
+type buffer struct {
+	bs []byte
+}
+
+func (b *buffer) Len() int { return len(b.bs) }
+
+func (b *buffer) WriteByte(c byte) error {
+	b.bs = append(b.bs, c)
+	return nil
+}
+
+func (b *buffer) WriteString(s string) (int, error) {
+	return b.Write([]byte(s))
+}
+
+func (b *buffer) Write(bs []byte) (int, error) {
+	b.bs = append(b.bs, bs...)
+	return len(bs), nil
+}
+
+func (b *buffer) String() string {
+	return string(b.bs)
+}
+
+func (b *buffer) Last() byte {
+	if len(b.bs) == 0 {
+		return 0
+	}
+	return b.bs[len(b.bs)-1]
+}
+
+func (b *buffer) TrimRightFunc(predicate func(byte) bool) {
+	for i := len(b.bs) - 1; i >= 0; i-- {
+		c := b.bs[i]
+		if !predicate(c) {
+			b.bs = b.bs[:i+1]
+			return
+		}
+	}
+	b.bs = b.bs[:0]
+}

@@ -126,7 +126,7 @@ func (h *FileHandler) saveMessage(m *Message) {
 		h.f[id] = f
 	}
 
-	_, err = f.WriteString(m.Format() + "\n")
+	_, err = f.WriteString(m.Format("%%") + "\n")
 	h.checkErr(err)
 }
 
