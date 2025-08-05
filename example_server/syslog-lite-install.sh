@@ -11,6 +11,8 @@ case `uname -m` in
      exit 1
 esac
 
+sudo systemctl stop syslog-lite ||:
+
 sudo setcap 'cap_net_bind_service=+ep' syslog.$ARCH
 sudo cp -vf syslog.$ARCH /usr/local/bin/syslog-lite
 sudo cp -vf syslog-lite.service /etc/systemd/system/
@@ -24,3 +26,4 @@ for d in $HOSTS; do
 done
 
 sudo systemctl daemon-reload
+sudo systemctl status syslog-lite
