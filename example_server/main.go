@@ -12,18 +12,10 @@ import (
 	"syscall"
 )
 
-type printHandler struct{}
-
-func (printHandler) Handle(m *syslog.Message) *syslog.Message {
-	if m != nil {
-		fmt.Println(m)
-	}
-	return m
-}
-
 var (
 	port     int
 	file     string
+	format   string
 	priority string
 	truncate bool
 	debug    bool
@@ -33,9 +25,11 @@ func flags() {
 	portDefault, e1 := env.GetInt("PORT", 514)
 	truncDefault, e2 := env.GetBool("TRUNCATE", false)
 	fileDefault := env.GetString("FILE", "")
+	formatDefault := env.GetString("FORMAT", syslog.RFCFormat)
 
 	flag.IntVar(&port, "port", portDefault, "port to listen on")
 	flag.StringVar(&file, "file", fileDefault, "file to write messages to")
+	flag.StringVar(&format, "format", formatDefault, "format to use for messages")
 	flag.StringVar(&priority, "priority", env.GetString("PRIORITY", ""),
 		"ignore messages that are not this priority\n"+
 			"Format: *.* | user.* | *.notice | kern,auth.notice,warning,err - where * is a wildcard")
@@ -147,4 +141,13 @@ func parseSeverityFilter(s string) syslog.Filter {
 		}
 		return false
 	}
+}
+
+type printHandler struct{}
+
+func (printHandler) Handle(m *syslog.Message) *syslog.Message {
+	if m != nil {
+		fmt.Println(m.Format(format))
+	}
+	return m
 }

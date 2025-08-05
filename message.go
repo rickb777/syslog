@@ -56,8 +56,9 @@ func (m *Message) RFC5424() string {
 	return m.format("<%Z>%V %T %H %A %P %M %D %C", v)
 }
 
-// RFC3164Format produces a rendering quite similar to RFC3164, although this RFC is not very specific.
-const RFC3164Format = "<%Z>%v %T %H %A %P %M %D %C"
+// RFCFormat produces RFC5424 renderings for v1 messages and a rendering quite similar
+// to RFC3164 for v0 messages, although RFC3164 is not very specific.
+const RFCFormat = "<%Z>%v %T %H %A %P %M %D %C"
 
 // Format converts the message into a string representation. The format string
 // can contain a sequence of place markers:

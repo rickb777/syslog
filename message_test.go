@@ -58,7 +58,7 @@ func TestMessage_String(t *testing.T) {
 	for i, c := range cases {
 		expect.String(c.m.String()).Info(i).ToBe(t, c.expString)
 		expect.String(c.m.RFC5424()).Info(i).ToBe(t, c.expRFC5424)
-		expect.String(c.m.Format(RFC3164Format)).Info(i).ToBe(t, c.expF1)
+		expect.String(c.m.Format(RFCFormat)).Info(i).ToBe(t, c.expF1)
 		expect.String(c.m.Format("<%Z>,%V,%T,%H,%A,%P,%M,%D,%C")).Info(i).ToBe(t, c.expF2)
 	}
 }
