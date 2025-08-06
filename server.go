@@ -2,9 +2,7 @@ package syslog
 
 import (
 	"fmt"
-	"log"
 	"net"
-	"os"
 	"strings"
 )
 
@@ -22,7 +20,6 @@ type Server struct {
 	handlers   []Handler
 	acceptFunc Filter
 	shutDown   bool
-	l          Logger
 	debug      bool
 }
 
@@ -32,18 +29,9 @@ func NewServer(qlen int) *Server {
 	s := &Server{
 		queue:      make(chan *Message, qlen),
 		acceptFunc: everything,
-		l:          log.New(os.Stderr, "", log.LstdFlags),
 	}
 	go s.passToHandlers()
 	return s
-}
-
-// SetLogger sets logger for server errors. A running server is rather quiet and
-// logs only fatal errors using [FatalLogger] interface. By default, the standard Go
-// logger is used so errors are written to stderr, after which the whole
-// application is halted. Using SetLogger you can change this behavior.
-func (s *Server) SetLogger(l Logger) {
-	s.l = l
 }
 
 func (s *Server) SetFilter(f Filter) {
@@ -108,7 +96,7 @@ func (s *Server) Shutdown() {
 	for _, c := range s.conns {
 		err := c.Close()
 		if err != nil {
-			s.l.Fatalln(err)
+			Logger.Fatalln(err)
 		}
 	}
 	close(s.queue)
@@ -140,7 +128,7 @@ func (s *Server) receiver(c net.PacketConn) {
 		n, addr, err := c.ReadFrom(buf)
 		if err != nil {
 			if !s.shutDown {
-				s.l.Fatalln("Read error:", err)
+				Logger.Fatalln("Read error:", err)
 			}
 			return
 		}
@@ -148,7 +136,7 @@ func (s *Server) receiver(c net.PacketConn) {
 		bs := buf[:n]
 		m, err := parseMessage(bs)
 		if err != nil {
-			s.l.Println(err.Error())
+			Logger.Println(err.Error())
 		} else if s.acceptFunc(m) {
 			m.Source = addr
 			if s.debug {
