@@ -3,8 +3,8 @@ package syslog
 // Filter is a predicate function for messages.
 type Filter func(*Message) bool
 
-// everything is a no-op filter.
-func everything(*Message) bool { return true }
+// AcceptEverything is a no-op filter.
+func AcceptEverything(*Message) bool { return true }
 
 // All combines filters so that all must accept a message for it to be accepted overall.
 func All(fs ...Filter) Filter {

@@ -1,45 +1,31 @@
 package syslog
 
 import (
-	"fmt"
 	"net"
 	"strings"
+	"sync/atomic"
 )
 
-// Handler handles syslog messages
-type Handler interface {
-	// Handle should return [Message] (maybe modified) for further processing by
-	// other handlers, or return nil. If Handle is called with nil message it
-	// should clean up and shut down before returning nil.
-	Handle(*Message) *Message
-}
-
+// Server handles UDP or Unix datagrams. Each received packet is parsed to obtain the syslog message.
+// The message is then passed along the [Handler] chain (see [Server.AddHandler]).
+//
+// The handlers follow the "Chain of Responsibility" design pattern.
 type Server struct {
 	conns      []net.PacketConn
 	queue      chan *Message
 	handlers   []Handler
 	acceptFunc Filter
-	shutDown   bool
-	debug      bool
+	shutDown   atomic.Bool
 }
 
 // NewServer creates an idle server. The internal queue length can be specified and should be a
 // small positive number.
 func NewServer(qlen int) *Server {
 	s := &Server{
-		queue:      make(chan *Message, qlen),
-		acceptFunc: everything,
+		queue: make(chan *Message, qlen),
 	}
 	go s.passToHandlers()
 	return s
-}
-
-func (s *Server) SetFilter(f Filter) {
-	s.acceptFunc = f
-}
-
-func (s *Server) SetDebug(on bool) {
-	s.debug = on
 }
 
 // AddHandler adds h to the internal ordered list of handlers.
@@ -49,8 +35,16 @@ func (s *Server) AddHandler(h Handler) {
 
 // Listen starts goroutine that receives syslog messages on a specified address.
 // addr can be a path (for Unix-domain sockets) or host:port (for UDP).
+// All messages are accepted.
 func (s *Server) Listen(addr string) error {
-	if s.shutDown {
+	return s.ListenFilter(addr, AcceptEverything)
+}
+
+// ListenFilter starts goroutine that receives syslog messages on a specified address.
+// addr can be a path (for Unix-domain sockets) or host:port (for UDP).
+// Only the messages matching accept are processed.
+func (s *Server) ListenFilter(addr string, accept Filter) error {
+	if s.shutDown.Load() {
 		panic("Server is already shut down")
 	}
 
@@ -77,7 +71,7 @@ func (s *Server) Listen(addr string) error {
 	}
 	s.conns = append(s.conns, c)
 
-	go s.receiver(c)
+	go receiver(c, s.queue, accept, func() bool { return !s.shutDown.Load() })
 	return nil
 }
 
@@ -92,7 +86,7 @@ func (s *Server) SigHup() {
 
 // Shutdown stops the server.
 func (s *Server) Shutdown() {
-	s.shutDown = true
+	s.shutDown.Store(true)
 	for _, c := range s.conns {
 		err := c.Close()
 		if err != nil {
@@ -122,13 +116,13 @@ func (s *Server) passToHandlers() {
 	}
 }
 
-func (s *Server) receiver(c net.PacketConn) {
+func receiver(c net.PacketConn, queue chan *Message, acceptFunc Filter, running func() bool) {
 	buf := make([]byte, 64*1024)
 	for {
 		n, addr, err := c.ReadFrom(buf)
 		if err != nil {
-			if !s.shutDown {
-				Logger.Fatalln("Read error:", err)
+			if running() {
+				Logger.Println("Read error:", err)
 			}
 			return
 		}
@@ -137,12 +131,9 @@ func (s *Server) receiver(c net.PacketConn) {
 		m, err := parseMessage(bs)
 		if err != nil {
 			Logger.Println(err.Error())
-		} else if s.acceptFunc(m) {
+		} else if acceptFunc(m) {
 			m.Source = addr
-			if s.debug {
-				fmt.Printf("%+v\n", *m)
-			}
-			s.queue <- m
+			queue <- m
 		}
 	}
 }

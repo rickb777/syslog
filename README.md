@@ -20,6 +20,20 @@ See the [example server](https://github.com/rickb777/syslog/blob/master/example_
 	s.Listen(":1514") // receives syslog packets on UDP port 1514
 ```
 
+## Syslog-lite service
+
+The `example_server` can run as a fully-functioning Syslog daemon. There are scripts in the `example_server` folder to run this as a Systemd service called `syslog-lite` that emulates the standard Syslog.
+
+First, build the server for your target server architecture, e.g.
+
+```shell
+cd example_server
+GOARCH=amd64 go build -o syslog.amd64 .
+GOARCH=arm64 go build -o syslog.arm64 .
+```
+
+Then run the install script `syslog-lite-install.sh`, which uses `syslog-lite.service` and `syslog-lite.conf`. Administer the service using standard SystemD tools `systemctl`, `journalctl`, etc.
+
 ## Earlier Work
 
 This is a fork of the [@chrissnell fork](https://github.com/chrissnell/syslog) of syslog.  This fork differs from [@ziutek's original version](https://github.com/ziutek/syslog) in the following ways:

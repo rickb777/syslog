@@ -3,12 +3,12 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/rickb777/syslog"
-	"github.com/rickb777/syslog/internal/env"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
+
+	"github.com/rickb777/syslog"
+	"github.com/rickb777/syslog/internal/env"
 )
 
 var (
@@ -28,17 +28,19 @@ func flags() {
 	priorityDefault := env.GetString("PRIORITY", "")
 
 	flag.IntVar(&port, "port", portDefault, "UDP port to listen on.")
-	flag.StringVar(&file, "file", fileDefault, "File to write messages to.")
+	flag.StringVar(&file, "file", fileDefault, "File to write messages to. (default stdout)")
 	flag.StringVar(&format, "format", formatDefault, "Format to use for messages.")
 	flag.StringVar(&priority, "priority", priorityDefault,
 		"Ignore messages that are not this priority, expressed as 'facility.severity'.\n"+
-			"Examples: *.* | user.* | *.notice | kern,auth.notice,warning,err - where * is a wildcard.\n"+
-			"The facility is one of the following keywords: auth, authpriv, cron, daemon, kern, lpr,\n"+
-			"mail, mark, news, security (same as auth), syslog, user, uucp and local0 through local7.\n"+
-			"The keywords mark and security should not be used in applications. The severity is one\n"+
-			"of the following keywords, in ascending order: debug, info, notice, warning, warn (same\n"+
-			"as warning), err, error (same as err), crit, alert, emerg, panic (same as emerg). The\n"+
-			"keywords error, warn and panic are deprecated and should not be used.")
+			"Facility and severity are both lists, where * is a wildcard.\n"+
+			"Examples: *.* | user.* | *.notice | kern,auth.notice,warning,err.\n\n"+
+			"The facility is one of the following keywords:\n"+
+			"auth, authpriv, cron, daemon, kern, lpr, mail, news, syslog, user, uucp\n"+
+			"and local0 through local7.\n\n"+
+			"The severity is one of the following keywords, in ascending order:\n"+
+			"debug, info, notice, warning, err, crit, alert, emerg.\n"+
+			"The keywords error (alias for err), warn (alias for warning) and panic\n"+
+			"(alias for emerg) are supported but deprecated.")
 	flag.IntVar(&retain, "retain", retainDefault,
 		"Truncate logfiles and rotate this number of files when opening.\n"+
 			"Negative values disable rotation.")
@@ -71,20 +73,27 @@ func main() {
 	flags()
 
 	s := syslog.NewServer(100)
-	s.SetDebug(debug)
+	if debug {
+		s.AddHandler(syslog.DebugHandler{})
+	}
 	if file != "" {
 		fh := syslog.NewFileHandler(file, format)
 		fh.SetRotate(retain)
 		s.AddHandler(fh)
 	} else {
-		s.AddHandler(printHandler{})
+		s.AddHandler(syslog.PrintHandler(format))
 	}
 
+	var err error
+	filter := syslog.AcceptEverything
 	if priority != "" {
-		s.SetFilter(parsePriorityFilter(priority))
+		filter, err = syslog.ParsePriorityFilter(priority)
+		if err != nil {
+			syslog.Logger.Fatalln(err)
+		}
 	}
 
-	err := s.Listen(fmt.Sprintf(":%d", port))
+	err = s.ListenFilter(fmt.Sprintf(":%d", port), filter)
 	if err != nil {
 		syslog.Logger.Fatalln(err)
 	}
@@ -103,68 +112,4 @@ func main() {
 			os.Exit(0)
 		}
 	}
-}
-
-func parsePriorityFilter(pri string) syslog.Filter {
-	parts := strings.Split(pri, ".")
-	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-		syslog.Logger.Fatalf("%s: invalid priority filter\n"+
-			"Must be like \"*.*\" | \"user.info\" | \"kern,auth.*\" etc.\n", pri)
-	}
-
-	if parts[0] == "*" && parts[1] == "*" {
-		return func(m *syslog.Message) bool { return true }
-	} else if parts[0] != "*" && parts[1] != "*" {
-		return syslog.All(
-			parseFacilityFilter(parts[0]),
-			parseSeverityFilter(parts[1]),
-		)
-	} else if parts[0] == "*" && parts[1] != "*" {
-		return parseSeverityFilter(parts[1])
-	} else {
-		return parseFacilityFilter(parts[0])
-	}
-}
-
-func parseFacilityFilter(s string) syslog.Filter {
-	words := strings.Split(s, ",")
-	facs, err := syslog.ParseFacilities(words)
-	if err != nil {
-		syslog.Logger.Fatalln(err)
-	}
-
-	return func(m *syslog.Message) bool {
-		for _, f := range facs {
-			if f == m.Facility {
-				return true
-			}
-		}
-		return false
-	}
-}
-
-func parseSeverityFilter(s string) syslog.Filter {
-	words := strings.Split(s, ",")
-	sevs, err := syslog.ParseSeverities(words)
-	if err != nil {
-		syslog.Logger.Fatalln(err)
-	}
-
-	return func(m *syslog.Message) bool {
-		for _, s := range sevs {
-			if s == m.Severity {
-				return true
-			}
-		}
-		return false
-	}
-}
-
-type printHandler struct{}
-
-func (printHandler) Handle(m *syslog.Message) *syslog.Message {
-	if m != nil {
-		fmt.Println(m.Format(format))
-	}
-	return m
 }

@@ -8,7 +8,8 @@ import (
 	"time"
 )
 
-// Message is a Syslog message.
+// Message is a Syslog message. See https://www.rfc-editor.org/rfc/rfc5424
+// and its forerunner https://www.rfc-editor.org/rfc/rfc3164.
 type Message struct {
 	Time   time.Time // locally determined
 	Source net.Addr  // from network socket
@@ -78,7 +79,7 @@ const RFCFormat = "<%Z>%v %T %H %A %P %M %D %C"
 //   - %Y = timestamp year (RFC3164 version 0 messages only)
 //   - %Z = priority
 //
-// Everything else is rendered into the result.
+// AcceptEverything else is rendered into the result.
 //
 // Blank fields are omitted from the result. Leading spaces are elided before each
 // blank field so that the result is compact.
