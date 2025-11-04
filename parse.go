@@ -3,11 +3,12 @@ package syslog
 import (
 	"bytes"
 	"fmt"
-	"github.com/rickb777/iso8601/v2"
 	"strconv"
 	"strings"
 	"time"
 	"unicode"
+
+	"github.com/rickb777/iso8601/v3"
 )
 
 func parseMessage(pkt []byte) (*Message, error) {
@@ -142,7 +143,7 @@ func parseRFC5424Message(m *Message, s string, hasBOM bool) (*Message, error) {
 		if sp >= 0 {
 			ts, err := iso8601.ParseString(s[:sp])
 			if err == nil {
-				m.Timestamp = ts
+				m.Timestamp = ts.Time
 				s = s[sp+1:]
 			}
 		}
