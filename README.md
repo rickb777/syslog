@@ -1,8 +1,10 @@
 # syslog
 
-[![GoDoc](https://img.shields.io/badge/api-Godoc-blue.svg)](https://pkg.go.dev/github.com/rickb777/syslog)
+[![GoDoc](https://img.shields.io/badge/api-Godoc-blue.svg)](http://pkg.go.dev/github.com/rickb777/syslog)
 [![Go Report Card](https://goreportcard.com/badge/github.com/rickb777/syslog)](https://goreportcard.com/report/github.com/rickb777/syslog)
-[![Issues](https://img.shields.io/github/issues/rickb777/syslog.svg)](https://github.com/rickb777/syslog/issues)
+[![Build](https://github.com/rickb777/syslog/actions/workflows/go.yml/badge.svg?branch=main)](https://github.com/rickb777/syslog/actions)
+[![Coverage](https://coveralls.io/repos/github/rickb777/syslog/badge.svg?branch=main)](https://coveralls.io/github/rickb777/syslog?branch=main)
+[![Issues](https://img.shields.io/github/issues/rickb777/syslog.svg)](https://github.com/rickb777/acceptable/issues)
 
 Using this library you can easily implement your own Syslog server that:
 

@@ -2,3 +2,4 @@
 syslog.amd64
 syslog.arm64
 /*.log
+/*.out
